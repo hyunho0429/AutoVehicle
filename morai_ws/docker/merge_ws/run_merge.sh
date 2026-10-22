@@ -55,5 +55,20 @@ case "$ACTION" in
     printf '\nROUNDABOUT_ENABLED=%s\n' "$value" >> "$SCRIPT_DIR/highway.env"
     echo "ROUNDABOUT_ENABLED=$value saved. Restart the launch to apply."
     ;;
-  *) echo 'Usage: bash run_merge.sh {init|show|monitor|drive|diagnose|start|stop|install --config|shell|validate|roundabout on/off|speed KMH|approach smooth|lane on/off}' >&2; exit 2 ;;
+  avoidance|avoidance-policy)
+    key=OBSTACLE_AVOIDANCE_ENABLED
+    if [[ "$ACTION" == avoidance ]]; then
+      [[ $# -eq 1 && "$1" =~ ^(on|off)$ ]] || { echo 'Usage: bash run_merge.sh avoidance on/off' >&2; exit 2; }
+      value=false; [[ "$1" == off ]] || value=true
+    else
+      key=AVOIDANCE_FAILURE_POLICY
+      [[ $# -eq 1 && "$1" =~ ^(reference|stop)$ ]] || { echo 'Usage: bash run_merge.sh avoidance-policy reference/stop' >&2; exit 2; }
+      value="$1"
+    fi
+    cp -p "$SCRIPT_DIR/highway.env" "$SCRIPT_DIR/highway.env.bak"
+    sed -i "/^${key}=/d" "$SCRIPT_DIR/highway.env"
+    printf '\n%s=%s\n' "$key" "$value" >> "$SCRIPT_DIR/highway.env"
+    echo "$key=$value saved. Restart the launch to apply."
+    ;;
+  *) echo 'Usage: bash run_merge.sh {init|show|monitor|drive|diagnose|start|stop|install --config|shell|validate|roundabout on/off|avoidance on/off|avoidance-policy reference/stop|speed KMH|approach smooth|lane on/off}' >&2; exit 2 ;;
 esac

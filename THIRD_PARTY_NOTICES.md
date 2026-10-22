@@ -1,4 +1,29 @@
-# Roundabout V6.1 source attribution
+# Third-party source attribution
+
+## Tunnel clearance V1
+
+Source: [x010806-sudo/morai-tunnel-clearance](https://github.com/x010806-sudo/morai-tunnel-clearance/tree/b2aace7baa3e19ea026baae2dc0bd30e72594fac).
+Pinned commit: `b2aace7baa3e19ea026baae2dc0bd30e72594fac`.
+Copyright remains with the upstream contributors. No explicit license file or
+license declaration was present in the supplied repository at this revision;
+the MIT notice below applies to the separately attributed roundabout source.
+
+Imported `frenet_planner.py` as `purepursuit_mgeo/tunnel_frenet_planner.py`;
+extracted numerical/memory/GPS helpers from `frenet_fsm_node.py` into
+`tunnel_support.py`; and adapted `lidar_tracked_obstacle_state_node.py` as
+`scripts/merge_ws_obstacle_states.py`. Numerical tests derive from the upstream
+`test_tunnel_clearance.py`. The original standalone FSM/command publisher and
+host apply/restore scripts are not installed or run.
+
+Integration adds a decision-only planner adapter, a single atomic path/speed
+contract, the existing controller's actual speed and route progress, closed-loop
+route support, shared LiDAR transport, current vehicle geometry/dynamics, source
+timestamps/frame validation and dual-clock timeouts. The upstream reference
+fallback policy and candidate offsets/costs are retained by default. General-road
+moving obstacles use measured velocities rather than the donor fixed-scene
+launch's forced-static assumption. See README for the reference fallback limits.
+
+## Roundabout V6.1
 
 Decision model imported from the `roundabout_v6_1/roundabout_v6_1` directory of
 [ohdang23/yujin_morai](https://github.com/ohdang23/yujin_morai/tree/6c7d805c993f8f2f0d73362de1898206401e0b05/roundabout_v6_1/roundabout_v6_1).

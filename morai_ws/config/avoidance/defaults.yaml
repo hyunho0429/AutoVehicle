@@ -1,0 +1,15 @@
+# Teammate V1 costs/candidate offsets. Failure policy matches upstream behavior.
+failure_policy: reference
+maneuver_speed_mps: 6.0
+planning_times_s: [2.0, 3.0, 4.0]
+avoidance_offsets_m: [0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.0, -2.0, 2.5, -2.5, 3.0, -3.0, 3.5, -3.5, 3.7, -3.7, 3.8, -3.8, 4.0, -4.0, 4.5, -4.5, 5.0, -5.0, 5.5, -5.5, 6.0, -6.0]
+vehicle_length_m: 4.635
+vehicle_width_m: 1.892
+safety_margin_m: 0.3
+trigger_distance_m: 30.0
+# Shared tracking velocities are used on general roads. Fixed-scene upstream
+# launch forced true; set true only for a known entirely static obstacle scene.
+assume_static_obstacles: false
+tunnel_gps_timeout_s: 1.0
+tunnel_gps_recovery_s: 1.0
+tunnel_obstacle_hold_s: 1.5

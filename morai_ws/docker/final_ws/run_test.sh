@@ -272,6 +272,8 @@ fi
 echo "Ubuntu=$UBUNTU_IP  MORAI=$MORAI_IP  container=$CONTAINER_NAME"
 if [[ "$TEST_PROFILE" == curvature_signal && "$LAUNCH" == merge_ws_drive.launch ]]; then
   PROFILE_ARGS+=("roundabout_enabled:=${ROUNDABOUT_ENABLED:-false}"
+    "obstacle_avoidance_enabled:=${OBSTACLE_AVOIDANCE_ENABLED:-true}"
+    "avoidance_failure_policy:=${AVOIDANCE_FAILURE_POLICY:-reference}"
     "roi_lidar_host_port:=$ROI_LIDAR_HOST_PORT" "roi_lidar_port:=$ROI_LIDAR_PORT"
     "lidar_x_m:=$LIDAR_X_M" "lidar_y_m:=$LIDAR_Y_M" "lidar_yaw_deg:=$LIDAR_YAW_DEG")
 fi

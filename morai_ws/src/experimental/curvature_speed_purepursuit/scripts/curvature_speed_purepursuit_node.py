@@ -32,6 +32,7 @@ from purepursuit_mgeo.longitudinal_controller import (
     VehicleSpeedSource,
 )
 from purepursuit_mgeo.mission_speed_gate import MissionSpeedGate, route_digest
+from purepursuit_mgeo.avoidance_gate import AvoidanceGate
 from curvature_speed_purepursuit.planner import (
     PathPoint,
     build_speed_profile,
@@ -90,6 +91,9 @@ class CurvatureSpeedPurePursuitNode:
             path_sha256=route_digest(path_file) if roundabout_enabled else "")
         self.roundabout_path_sha = self.roundabout_gate.path_sha
         self.roundabout_bounds = []
+        avoidance_enabled = bool(rospy.get_param("~obstacle_avoidance_enabled", False))
+        self.avoidance_gate = AvoidanceGate(avoidance_enabled, .8,
+            route_digest(path_file) if avoidance_enabled else "")
         raw_points = load_path_file(path_file)
         self.points = clean_consecutive_duplicates(
             raw_points,
@@ -419,6 +423,9 @@ class CurvatureSpeedPurePursuitNode:
                 "/planning/roundabout/path_capability", String, queue_size=1)
             rospy.Subscriber(rospy.get_param("~roundabout_status_topic", "/planning/roundabout/status"),
                              String, self.roundabout_callback, queue_size=1)
+        if avoidance_enabled:
+            self.avoidance_vehicle_pub = rospy.Publisher("/planning/avoidance/vehicle", String, queue_size=1)
+            rospy.Subscriber("/planning/avoidance/decision", String, self.avoidance_callback, queue_size=1)
         if self.vehicle_speed_topic:
             rospy.Subscriber(self.vehicle_speed_topic, EgoVehicleStatus,
                              self.vehicle_speed_callback, queue_size=10)
@@ -608,6 +615,9 @@ class CurvatureSpeedPurePursuitNode:
 
     def roundabout_callback(self, message):
         self.roundabout_gate.observe(message.data, rospy.Time.now().to_sec(), time.monotonic())
+
+    def avoidance_callback(self, message):
+        self.avoidance_gate.observe(message.data, rospy.Time.now().to_sec(), time.monotonic())
 
     def apply_speed_rate_limit(self, target_speed: float, dt: float) -> float:
         target = max(0.0, min(float(target_speed), self.max_speed_kph / MPS_TO_KPH))
@@ -985,9 +995,21 @@ class CurvatureSpeedPurePursuitNode:
         )
         if stopline_cap_active:
             speed_limit = min(speed_limit, self.stopline_approach_speed_kph / MPS_TO_KPH)
+        if self.avoidance_gate.enabled:
+            self.avoidance_vehicle_pub.publish(String(data=json.dumps(dict(timestamp=now,
+                path_sha256=self.avoidance_gate.path_sha, frame_id="map", speed_unit="m/s",
+                vehicle=[x, y, yaw, measured_speed_mps], progress_s=progress_s), allow_nan=False)))
+        speed_limit, avoidance_stop, local_steering, avoidance_reason = self.avoidance_gate.select(
+            speed_limit, now, time.monotonic(), (x, y, yaw, measured_speed_mps),
+            self.wheelbase_m, self.steering_sign)
+        stop = stop or avoidance_stop
+        if avoidance_stop:
+            rospy.logwarn_throttle(2., "Obstacle planner stop: %s", avoidance_reason)
         if self.roundabout_bounds:
             caps = {name: minimum_speed_ahead(self.preview_s_values, self.preview_speeds, begin, end-begin)
                     for name, begin, end in self.roundabout_bounds}
+            if self.avoidance_gate.enabled:
+                caps = {name: min(cap, speed_limit) for name, cap in caps.items()}
             self.roundabout_capability_pub.publish(String(data=json.dumps(dict(
                 timestamp=now, path_sha256=self.roundabout_path_sha, speed_unit="m/s", caps=caps), allow_nan=False)))
         speed_limit, mission_stop, mission_reason = self.roundabout_gate.constrain(
@@ -1007,12 +1029,17 @@ class CurvatureSpeedPurePursuitNode:
             lane_correction = 0.0
             lane_correction_active = False
         else:
-            steering, target, actual_lookahead = self.compute_steering(
-                x, y, yaw, measured_speed_mps, progress_s, path_lateral_error
-            )
-            steering, lane_correction, lane_correction_active = self.lane_centered_steering(
-                steering, measured_speed_mps, dt
-            )
+            if local_steering is not None:
+                steering, target, actual_lookahead = local_steering
+                self.stop_lane_assist("obstacle_avoidance")
+                lane_correction, lane_correction_active = 0., False
+            else:
+                steering, target, actual_lookahead = self.compute_steering(
+                    x, y, yaw, measured_speed_mps, progress_s, path_lateral_error
+                )
+                steering, lane_correction, lane_correction_active = self.lane_centered_steering(
+                    steering, measured_speed_mps, dt
+                )
             steering = self.limit_steering_rate(steering, dt)
 
         target_message = PointStamped()

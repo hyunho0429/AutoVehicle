@@ -17,6 +17,15 @@ curvature_runtime_files() (
       src/detection/camera_perception/lane/mgeo/R_KR_PR_K-city_2025/traffic_light_set.json \
       src/control/purepursuit_mgeo/src/purepursuit_mgeo/longitudinal_controller.py \
       src/control/purepursuit_mgeo/src/purepursuit_mgeo/mission_speed_gate.py \
+      src/control/purepursuit_mgeo/src/purepursuit_mgeo/avoidance_gate.py \
+      src/control/purepursuit_mgeo/src/purepursuit_mgeo/obstacle_avoidance.py \
+      src/control/purepursuit_mgeo/src/purepursuit_mgeo/tunnel_support.py \
+      src/control/purepursuit_mgeo/src/purepursuit_mgeo/tunnel_frenet_planner.py \
+      src/control/purepursuit_mgeo/src/purepursuit_mgeo/path.py \
+      src/control/purepursuit_mgeo/scripts/merge_ws_obstacle_planner.py \
+      src/control/purepursuit_mgeo/scripts/merge_ws_obstacle_states.py \
+      src/control/purepursuit_mgeo/CMakeLists.txt \
+      src/control/purepursuit_mgeo/package.xml \
       src/bringup/morai_bringup/package.xml \
       data/routes/2026_molit_comp_global_path.txt \
       docker/final_ws/curvature_runtime_files.sh \
@@ -28,7 +37,8 @@ curvature_runtime_files() (
       docker/final_ws/run_regression.py \
       docker/final_ws/smoke_models.py
     printf '%s\n' src/bringup/morai_bringup/launch/merge_ws_drive.launch
-    find config/roundabout docker/merge_ws -type f ! -name highway.env ! -name highway-test.env ! -name '*.bak' ! -name '*.pyc' ! -path '*/__pycache__/*'
+    find config/roundabout config/avoidance docker/merge_ws -type f ! -name highway.env ! -name highway-test.env ! -name '*.bak' ! -name '*.pyc' ! -path '*/__pycache__/*'
+    find src/control/purepursuit_mgeo/test -type f -name 'test_tunnel*.py'
     local package
     for package in \
       src/experimental/curvature_speed_purepursuit \

@@ -16,6 +16,8 @@ catkin_python_setup()
 catkin_package()
 
 catkin_install_python(PROGRAMS
+  scripts/merge_ws_obstacle_planner.py
+  scripts/merge_ws_obstacle_states.py
   scripts/purepursuit_mgeo_node.py
   scripts/avoidance_frenet_debug_node.py
   scripts/avoidance_path_manager_node.py

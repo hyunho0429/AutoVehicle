@@ -6,6 +6,9 @@
   <arg name="roundabout_regions_file" default="$(arg workspace_path)/config/roundabout/regions.csv" />
   <arg name="roundabout_defaults_file" default="$(arg workspace_path)/config/roundabout/defaults.yaml" />
   <arg name="roundabout_start_lidar" default="true" />
+  <arg name="obstacle_avoidance_enabled" default="true" />
+  <arg name="avoidance_failure_policy" default="reference" />
+  <arg name="avoidance_defaults_file" default="$(arg workspace_path)/config/avoidance/defaults.yaml" />
   <arg name="roi_lidar_host_port" default="2000" />
   <arg name="roi_lidar_port" default="2001" />
   <arg name="lidar_x_m" default="0.0" />
@@ -115,6 +118,7 @@
     <param name="pose_topic" value="/localization/odometry" />
     <param name="command_topic" value="/control/ctrl_cmd" />
     <param name="roundabout_gate_enabled" value="$(arg roundabout_enabled)" />
+    <param name="obstacle_avoidance_enabled" value="$(arg obstacle_avoidance_enabled)" />
     <param name="roundabout_regions_file" value="$(arg roundabout_regions_file)" />
     <param name="roundabout_status_topic" value="$(arg roundabout_status_topic)" />
     <param name="roundabout_decision_timeout_sec" value="0.3" />
@@ -246,8 +250,8 @@
     <param name="settle_distance_m" value="$(arg stopline_settle_distance_m)" />
   </node>
 
-  <group if="$(arg roundabout_enabled)">
-    <include if="$(arg roundabout_start_lidar)" file="$(find lidar_perception)/launch/lidar_algorithm_pipeline.launch">
+  <!-- One UDP receiver/tracker shared by both missions; never start a second one. -->
+    <include if="$(eval (arg('roundabout_enabled') or arg('obstacle_avoidance_enabled')) and arg('roundabout_start_lidar'))" file="$(find lidar_perception)/launch/lidar_algorithm_pipeline.launch">
       <arg name="algorithm_type" value="lidar_tracking_node.py" />
       <arg name="algorithm_name" value="merge_ws_lidar_tracking" />
       <arg name="result_prefix" value="tracking" />
@@ -262,6 +266,23 @@
       <arg name="lidar_y_m" value="$(arg lidar_y_m)" />
       <arg name="lidar_yaw_deg" value="$(arg lidar_yaw_deg)" />
     </include>
+  <group if="$(arg obstacle_avoidance_enabled)">
+    <node pkg="purepursuit_mgeo" type="merge_ws_obstacle_states.py" name="merge_ws_obstacle_states" output="screen" required="true">
+      <param name="output_topic" value="/planning/avoidance/obstacles" />
+      <param name="static_topic" value="/planning/avoidance/static_obstacles" />
+      <param name="dynamic_topic" value="/planning/avoidance/dynamic_obstacles" />
+    </node>
+    <node pkg="purepursuit_mgeo" type="merge_ws_obstacle_planner.py" name="merge_ws_obstacle_planner" output="screen" required="true">
+      <param name="path_file" value="$(arg path_file)" />
+      <param name="defaults_file" value="$(arg avoidance_defaults_file)" />
+      <param name="failure_policy" value="$(arg avoidance_failure_policy)" />
+      <param name="front_reference_offset_m" value="$(arg stopline_front_reference_offset_m)" />
+      <param name="lateral_accel_limit_mps2" value="$(arg turn_lateral_accel_limit_mps2)" />
+      <param name="wheelbase_m" value="$(arg wheelbase_m)" />
+      <param name="max_steering_rad" value="$(arg max_steering_rad)" />
+    </node>
+  </group>
+  <group if="$(arg roundabout_enabled)">
     <node pkg="roundabout_mission" type="merge_ws_roundabout_gate.py" name="merge_ws_roundabout_gate" output="screen" required="true">
       <param name="enabled" value="true" />
       <param name="path_file" value="$(arg path_file)" />
