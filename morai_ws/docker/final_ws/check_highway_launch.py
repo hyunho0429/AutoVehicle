@@ -43,7 +43,16 @@ def main():
             assert excluded not in names, (excluded,output)
         assert not any('lidar' in name.lower() for name in names), output
     print('CURVATURE_SIGNAL_LAUNCH_OK: ROS resolved monitor/drive; control was not started')
+    for enabled in ('false', 'true'):
+        output=subprocess.check_output(['roslaunch','--nodes','morai_bringup',
+            'merge_ws_drive.launch','workspace_path:='+str(ws),
+            'enable_control:=false','roundabout_enabled:='+enabled],env=env,text=True)
+        names=output.splitlines()
+        assert len(names)==len(set(names)),output
+        assert '/curvature_speed_purepursuit' in names and '/curvature_signal_controller' in names
+        assert ('/merge_ws_roundabout_gate' in names)==(enabled=='true'),output
+        assert '/roundabout_test_driver' not in names,output
+    print('MERGE_WS_LAUNCH_OK: optional decision-only roundabout includes resolved; no control started')
 
 
 if __name__=='__main__': main()
-

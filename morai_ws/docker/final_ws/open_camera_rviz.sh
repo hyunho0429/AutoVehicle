@@ -3,7 +3,7 @@
 # No launch file, camera UDP receiver, model inference or controller is started.
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/highway.env"
+source "${MORAI_SETTINGS_DIR:-$SCRIPT_DIR}/highway.env"
 : "${CONTAINER_NAME:?Set CONTAINER_NAME in highway.env}"
 : "${UBUNTU_IP:?Set UBUNTU_IP in highway.env}"
 [[ -n "${DISPLAY:-}" ]] || {

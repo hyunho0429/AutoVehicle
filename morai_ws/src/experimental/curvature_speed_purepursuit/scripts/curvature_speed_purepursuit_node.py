@@ -9,6 +9,7 @@ publish_command=true이면 command_topic으로 nominal CtrlCmd를 발행하며,
 from __future__ import annotations
 
 import json
+import csv
 import math
 import os
 import threading
@@ -30,6 +31,7 @@ from purepursuit_mgeo.longitudinal_controller import (
     SpeedPIController,
     VehicleSpeedSource,
 )
+from purepursuit_mgeo.mission_speed_gate import MissionSpeedGate, route_digest
 from curvature_speed_purepursuit.planner import (
     PathPoint,
     build_speed_profile,
@@ -81,12 +83,29 @@ class CurvatureSpeedPurePursuitNode:
             "2026_molit_comp_global_path.txt",
         )
         path_file = rospy.get_param("~path_file", default_path)
+        roundabout_enabled = bool(rospy.get_param("~roundabout_gate_enabled", False))
+        self.roundabout_gate = MissionSpeedGate(
+            enabled=roundabout_enabled,
+            timeout_sec=float(rospy.get_param("~roundabout_decision_timeout_sec", 0.3)),
+            path_sha256=route_digest(path_file) if roundabout_enabled else "")
+        self.roundabout_path_sha = self.roundabout_gate.path_sha
+        self.roundabout_bounds = []
         raw_points = load_path_file(path_file)
         self.points = clean_consecutive_duplicates(
             raw_points,
             float(rospy.get_param("~duplicate_epsilon_m", 1e-6)),
         )
         self.s_values = cumulative_arc_lengths(self.points)
+        if roundabout_enabled:
+            raw_s = cumulative_arc_lengths(raw_points)
+            with open(rospy.get_param("~roundabout_regions_file"), newline="", encoding="utf-8-sig") as stream:
+                for row in csv.DictReader(stream):
+                    if not any(row.values()):
+                        continue
+                    start, end = int(row["start_index"]), int(row["end_index"])
+                    if not 0 <= start < end < len(raw_s):
+                        raise ValueError("invalid roundabout region bounds")
+                    self.roundabout_bounds.append((row["region_id"], raw_s[start], raw_s[end]))
         self.total_length_m = self.s_values[-1]
         self.loop_route = bool(rospy.get_param("~loop_route", False))
         if self.loop_route:
@@ -395,6 +414,11 @@ class CurvatureSpeedPurePursuitNode:
         )
 
         rospy.Subscriber(self.pose_topic, Odometry, self.odom_callback, queue_size=10)
+        if roundabout_enabled:
+            self.roundabout_capability_pub = rospy.Publisher(
+                "/planning/roundabout/path_capability", String, queue_size=1)
+            rospy.Subscriber(rospy.get_param("~roundabout_status_topic", "/planning/roundabout/status"),
+                             String, self.roundabout_callback, queue_size=1)
         if self.vehicle_speed_topic:
             rospy.Subscriber(self.vehicle_speed_topic, EgoVehicleStatus,
                              self.vehicle_speed_callback, queue_size=10)
@@ -581,6 +605,9 @@ class CurvatureSpeedPurePursuitNode:
                 end_segment=end,
             )
         return projection
+
+    def roundabout_callback(self, message):
+        self.roundabout_gate.observe(message.data, rospy.Time.now().to_sec(), time.monotonic())
 
     def apply_speed_rate_limit(self, target_speed: float, dt: float) -> float:
         target = max(0.0, min(float(target_speed), self.max_speed_kph / MPS_TO_KPH))
@@ -949,6 +976,7 @@ class CurvatureSpeedPurePursuitNode:
 
         remaining_m = max(0.0, self.total_length_m - progress_s)
         stop = not self.loop_route and remaining_m <= self.goal_tolerance_m
+        goal_reached = stop
         speed_limit = minimum_speed_ahead(
             self.preview_s_values, self.preview_speeds, progress_s,
             measured_speed_mps * self.speed_preview_time_sec)
@@ -957,6 +985,16 @@ class CurvatureSpeedPurePursuitNode:
         )
         if stopline_cap_active:
             speed_limit = min(speed_limit, self.stopline_approach_speed_kph / MPS_TO_KPH)
+        if self.roundabout_bounds:
+            caps = {name: minimum_speed_ahead(self.preview_s_values, self.preview_speeds, begin, end-begin)
+                    for name, begin, end in self.roundabout_bounds}
+            self.roundabout_capability_pub.publish(String(data=json.dumps(dict(
+                timestamp=now, path_sha256=self.roundabout_path_sha, speed_unit="m/s", caps=caps), allow_nan=False)))
+        speed_limit, mission_stop, mission_reason = self.roundabout_gate.constrain(
+            speed_limit, now, time.monotonic())
+        stop = stop or mission_stop
+        if mission_stop:
+            rospy.logwarn_throttle(2.0, "Roundabout stop: %s", mission_reason)
         command_speed = 0.0 if stop else self.apply_speed_rate_limit(speed_limit, dt)
         curvature = profile_value_at_s(self.s_values, self.curvatures, progress_s)
 
@@ -1003,7 +1041,7 @@ class CurvatureSpeedPurePursuitNode:
         self.lane_correction_pub.publish(Float64(lane_correction))
         self.lane_correction_active_pub.publish(Bool(lane_correction_active))
         self.progress_pub.publish(Float64(progress_s))
-        self.goal_pub.publish(Bool(stop))
+        self.goal_pub.publish(Bool(goal_reached))
         self.stopline_cap_active_pub.publish(Bool(stopline_cap_active))
         self.stopline_cap_target_pub.publish(Float64(
             self.stopline_approach_speed_kph if stopline_cap_active else 0.0

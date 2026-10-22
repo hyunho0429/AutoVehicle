@@ -3,6 +3,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+SETTINGS_DIR="${MORAI_SETTINGS_DIR:-$SCRIPT_DIR}"
 ACTION="${1:-show}"
 if [[ $# -gt 2 || ! "$ACTION" =~ ^(show|monitor|drive|diagnose|speed|clearance|approach|lane|turn|models|request-merge|view|rviz)$ ]] ||
    [[ "$ACTION" =~ ^(models|request-merge|view|rviz)$ && $# -gt 1 ]] ||
@@ -10,14 +11,14 @@ if [[ $# -gt 2 || ! "$ACTION" =~ ^(show|monitor|drive|diagnose|speed|clearance|a
   echo 'Usage: bash run_test.sh {show|monitor|drive} [1-5]; or {speed KMH|clearance METERS|approach smooth|lane on/off|turn safe/mission|models|request-merge|diagnose [2]|view|rviz}' >&2
   exit 2
 fi
-if [[ ! -f "$SCRIPT_DIR/highway.env" || ! -f "$SCRIPT_DIR/highway-test.env" ]]; then
+if [[ ! -f "$SETTINGS_DIR/highway.env" || ! -f "$SETTINGS_DIR/highway-test.env" ]]; then
   echo 'Create highway.env and copy highway-test.env.example to highway-test.env first.' >&2
   exit 2
 fi
-source "$SCRIPT_DIR/highway.env"
+source "$SETTINGS_DIR/highway.env"
 # The versioned example supplies defaults for fields added by later updates.
 source "$SCRIPT_DIR/highway-test.env.example"
-source "$SCRIPT_DIR/highway-test.env"
+source "$SETTINGS_DIR/highway-test.env"
 source "$SCRIPT_DIR/curvature_runtime_files.sh"
 if [[ "$ACTION" == view ]]; then
   exec bash "$SCRIPT_DIR/open_camera_dashboard.sh"
@@ -36,11 +37,11 @@ if [[ "$ACTION" == speed ]]; then
   [[ "$VALUE" =~ ^[0-9]+([.][0-9]+)?$ && "$VALUE" =~ [1-9] ]] || {
     echo 'Usage: bash run_test.sh speed KMH (positive number, e.g. 10)' >&2; exit 2;
   }
-  cp -p "$SCRIPT_DIR/highway-test.env" "$SCRIPT_DIR/highway-test.env.bak"
-  if grep -q '^MAX_SPEED_KPH=' "$SCRIPT_DIR/highway-test.env"; then
-    sed -i "s/^MAX_SPEED_KPH=.*/MAX_SPEED_KPH=$VALUE/" "$SCRIPT_DIR/highway-test.env"
+  cp -p "$SETTINGS_DIR/highway-test.env" "$SETTINGS_DIR/highway-test.env.bak"
+  if grep -q '^MAX_SPEED_KPH=' "$SETTINGS_DIR/highway-test.env"; then
+    sed -i "s/^MAX_SPEED_KPH=.*/MAX_SPEED_KPH=$VALUE/" "$SETTINGS_DIR/highway-test.env"
   else
-    printf '\nMAX_SPEED_KPH=%s\n' "$VALUE" >> "$SCRIPT_DIR/highway-test.env"
+    printf '\nMAX_SPEED_KPH=%s\n' "$VALUE" >> "$SETTINGS_DIR/highway-test.env"
   fi
   echo "MAX_SPEED_KPH=$VALUE saved. Restart the driving launch to apply; no live parameter was changed."
   exit 0
@@ -50,11 +51,11 @@ if [[ "$ACTION" == clearance ]]; then
   [[ "$VALUE" =~ ^[0-9]+([.][0-9]+)?$ && "$VALUE" =~ [1-9] ]] || {
     echo 'Usage: bash run_test.sh clearance METERS (positive front-bumper clearance, e.g. 6)' >&2; exit 2;
   }
-  cp -p "$SCRIPT_DIR/highway-test.env" "$SCRIPT_DIR/highway-test.env.bak"
-  if grep -q '^STOPLINE_HOLD_DISTANCE_M=' "$SCRIPT_DIR/highway-test.env"; then
-    sed -i "s/^STOPLINE_HOLD_DISTANCE_M=.*/STOPLINE_HOLD_DISTANCE_M=$VALUE/" "$SCRIPT_DIR/highway-test.env"
+  cp -p "$SETTINGS_DIR/highway-test.env" "$SETTINGS_DIR/highway-test.env.bak"
+  if grep -q '^STOPLINE_HOLD_DISTANCE_M=' "$SETTINGS_DIR/highway-test.env"; then
+    sed -i "s/^STOPLINE_HOLD_DISTANCE_M=.*/STOPLINE_HOLD_DISTANCE_M=$VALUE/" "$SETTINGS_DIR/highway-test.env"
   else
-    printf '\nSTOPLINE_HOLD_DISTANCE_M=%s\n' "$VALUE" >> "$SCRIPT_DIR/highway-test.env"
+    printf '\nSTOPLINE_HOLD_DISTANCE_M=%s\n' "$VALUE" >> "$SETTINGS_DIR/highway-test.env"
   fi
   echo "Front-bumper stopline clearance $VALUE m saved. Restart the driving launch to apply."
   exit 0
@@ -66,14 +67,14 @@ if [[ "$ACTION" == approach ]]; then
   # Updating the checkout does not replace the user's saved env. Apply this
   # preset explicitly so older 0.6/30 m settings cannot override the new tune.
   PLANNING_DECEL="$(awk -v maximum="$MAX_DECEL_MPS2" 'BEGIN {if (maximum <= 0) exit 1; print (maximum < 1.2 ? maximum : 1.2)}')"
-  cp -p "$SCRIPT_DIR/highway-test.env" "$SCRIPT_DIR/highway-test.env.bak"
+  cp -p "$SETTINGS_DIR/highway-test.env" "$SETTINGS_DIR/highway-test.env.bak"
   for entry in STOPLINE_HOLD_DISTANCE_M=0.5 "STOPLINE_PLANNING_DECEL_MPS2=$PLANNING_DECEL" STOPLINE_BRAKE_RAMP_DISTANCE_M=0.0 STOPLINE_SETTLE_DISTANCE_M=0.15; do
     name="${entry%%=*}"
     value="${entry#*=}"
-    if grep -q "^${name}=" "$SCRIPT_DIR/highway-test.env"; then
-      sed -i "s/^${name}=.*/${name}=${value}/" "$SCRIPT_DIR/highway-test.env"
+    if grep -q "^${name}=" "$SETTINGS_DIR/highway-test.env"; then
+      sed -i "s/^${name}=.*/${name}=${value}/" "$SETTINGS_DIR/highway-test.env"
     else
-      printf '\n%s=%s\n' "$name" "$value" >> "$SCRIPT_DIR/highway-test.env"
+      printf '\n%s=%s\n' "$name" "$value" >> "$SETTINGS_DIR/highway-test.env"
     fi
   done
   echo "Progressive stop approach saved: planning deceleration $PLANNING_DECEL m/s^2, front-bumper clearance 0.5 m."
@@ -93,14 +94,14 @@ if [[ "$ACTION" == turn ]]; then
       ;;
     *) echo 'Usage: bash run_test.sh turn {safe|mission}' >&2; exit 2 ;;
   esac
-  cp -p "$SCRIPT_DIR/highway-test.env" "$SCRIPT_DIR/highway-test.env.bak"
+  cp -p "$SETTINGS_DIR/highway-test.env" "$SETTINGS_DIR/highway-test.env.bak"
   for entry in "${preset[@]}" SPEED_ERROR_DEADBAND_KPH=0.5 PEDAL_ACCEL_RISE_RATE_PER_SEC=0.7 PEDAL_BRAKE_RISE_RATE_PER_SEC=1.5 PEDAL_RELEASE_RATE_PER_SEC=2.0 MAX_STEERING_RATE_RAD_S=1.2 LOOKAHEAD_GAIN=0.25 STEERING_FEEDFORWARD_WEIGHT=0.35 STOPLINE_APPROACH_SPEED_KPH=30.0 STOPLINE_HOLD_DISTANCE_M=0.5 STOPLINE_BRAKE_RAMP_DISTANCE_M=0.0 STOPLINE_SETTLE_DISTANCE_M=0.15; do
     name="${entry%%=*}"
     value="${entry#*=}"
-    if grep -q "^${name}=" "$SCRIPT_DIR/highway-test.env"; then
-      sed -i "s/^${name}=.*/${name}=${value}/" "$SCRIPT_DIR/highway-test.env"
+    if grep -q "^${name}=" "$SETTINGS_DIR/highway-test.env"; then
+      sed -i "s/^${name}=.*/${name}=${value}/" "$SETTINGS_DIR/highway-test.env"
     else
-      printf '\n%s=%s\n' "$name" "$value" >> "$SCRIPT_DIR/highway-test.env"
+      printf '\n%s=%s\n' "$name" "$value" >> "$SETTINGS_DIR/highway-test.env"
     fi
   done
   echo "Turn/intersection preset ${2} saved: straight ceiling ${preset[0]#*=} km/h, mapped stopline approach 30 km/h, clearance 0.5 m."
@@ -113,11 +114,11 @@ if [[ "$ACTION" == lane ]]; then
     off) VALUE=false ;;
     *) echo 'Usage: bash run_test.sh lane {on|off}' >&2; exit 2 ;;
   esac
-  cp -p "$SCRIPT_DIR/highway-test.env" "$SCRIPT_DIR/highway-test.env.bak"
-  if grep -q '^LANE_CENTERING_ENABLED=' "$SCRIPT_DIR/highway-test.env"; then
-    sed -i "s/^LANE_CENTERING_ENABLED=.*/LANE_CENTERING_ENABLED=$VALUE/" "$SCRIPT_DIR/highway-test.env"
+  cp -p "$SETTINGS_DIR/highway-test.env" "$SETTINGS_DIR/highway-test.env.bak"
+  if grep -q '^LANE_CENTERING_ENABLED=' "$SETTINGS_DIR/highway-test.env"; then
+    sed -i "s/^LANE_CENTERING_ENABLED=.*/LANE_CENTERING_ENABLED=$VALUE/" "$SETTINGS_DIR/highway-test.env"
   else
-    printf '\nLANE_CENTERING_ENABLED=%s\n' "$VALUE" >> "$SCRIPT_DIR/highway-test.env"
+    printf '\nLANE_CENTERING_ENABLED=%s\n' "$VALUE" >> "$SETTINGS_DIR/highway-test.env"
   fi
   if [[ "$VALUE" == true ]]; then
     # Apply one explicit preset so saved values from older releases cannot
@@ -125,10 +126,10 @@ if [[ "$ACTION" == lane ]]; then
     for entry in LANE_CENTERING_WEIGHT=0.25 LANE_CENTERING_MAX_CORRECTION_RAD=0.045 LANE_CENTERING_MIN_CONFIDENCE=0.65 LANE_CENTERING_TIMEOUT_SEC=0.4 LANE_CENTERING_MIN_FRAMES=4 LANE_CENTERING_FILTER_TAU_SEC=0.35 LANE_CENTERING_CORRECTION_RATE_RAD_S=0.06 LANE_CENTERING_RELEASE_RATE_RAD_S=0.10; do
       name="${entry%%=*}"
       value="${entry#*=}"
-      if grep -q "^${name}=" "$SCRIPT_DIR/highway-test.env"; then
-        sed -i "s/^${name}=.*/${name}=${value}/" "$SCRIPT_DIR/highway-test.env"
+      if grep -q "^${name}=" "$SETTINGS_DIR/highway-test.env"; then
+        sed -i "s/^${name}=.*/${name}=${value}/" "$SETTINGS_DIR/highway-test.env"
       else
-        printf '\n%s=%s\n' "$name" "$value" >> "$SCRIPT_DIR/highway-test.env"
+        printf '\n%s=%s\n' "$name" "$value" >> "$SETTINGS_DIR/highway-test.env"
       fi
     done
     echo 'CAM1 residual assist preset saved: weight 0.25, limit 0.045 rad, confidence 0.65, 4 stable frames, age <= 0.4 s, filter 0.35 s, slew 0.06/0.10 rad/s.'
@@ -200,7 +201,7 @@ case "$TEST_PROFILE" in
     PROFILE_ARGS=("use_curvature_speed_planner:=true" "command_topic:=/ctrl_cmd")
     ;;
   curvature_signal)
-    LAUNCH=final_ws_curvature_signal.launch
+    LAUNCH="${MORAI_PROFILE2_LAUNCH:-final_ws_curvature_signal.launch}"
     PROFILE_ARGS=(
       "curve_lateral_accel_limit_mps2:=$LATERAL_ACCEL_LIMIT_MPS2"
       "curve_planning_decel_mps2:=$CURVE_PLANNING_DECEL_MPS2"
@@ -269,6 +270,11 @@ if [[ "$TEST_PROFILE" == curvature_signal ]]; then
   echo "Lane_frames=${LANE_CENTERING_MIN_FRAMES:-4} max_age_s=${LANE_CENTERING_TIMEOUT_SEC:-0.4} filter_tau_s=${LANE_CENTERING_FILTER_TAU_SEC:-0.35} correction_rate_rad_s=${LANE_CENTERING_CORRECTION_RATE_RAD_S:-0.06} release_rate_rad_s=${LANE_CENTERING_RELEASE_RATE_RAD_S:-0.10}"
 fi
 echo "Ubuntu=$UBUNTU_IP  MORAI=$MORAI_IP  container=$CONTAINER_NAME"
+if [[ "$TEST_PROFILE" == curvature_signal && "$LAUNCH" == merge_ws_drive.launch ]]; then
+  PROFILE_ARGS+=("roundabout_enabled:=${ROUNDABOUT_ENABLED:-false}"
+    "roi_lidar_host_port:=$ROI_LIDAR_HOST_PORT" "roi_lidar_port:=$ROI_LIDAR_PORT"
+    "lidar_x_m:=$LIDAR_X_M" "lidar_y_m:=$LIDAR_Y_M" "lidar_yaw_deg:=$LIDAR_YAW_DEG")
+fi
 if [[ "$ACTION" == show ]]; then
   echo "Launch=$LAUNCH (show does not contact Docker or send control)"
   printf '%s\n' "${COMMON_ARGS[@]}" "${PROFILE_ARGS[@]}"

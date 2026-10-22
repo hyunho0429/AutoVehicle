@@ -43,6 +43,7 @@ COPY src ./src
 COPY config ./config
 COPY data ./data
 COPY docker/final_ws ./docker/final_ws
+COPY docker/merge_ws ./docker/merge_ws
 
 # Camera team's six-class checkpoint is pinned separately from legacy models.
 RUN python docker/final_ws/fetch_highway_model.py

@@ -3,12 +3,13 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+SETTINGS_DIR="${MORAI_SETTINGS_DIR:-$SCRIPT_DIR}"
 if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --config ) ]]; then
   echo 'Usage: bash install_curvature_signal.sh [--config]' >&2
   exit 2
 fi
-[[ -f "$SCRIPT_DIR/highway.env" ]] || { echo 'Missing highway.env' >&2; exit 2; }
-source "$SCRIPT_DIR/highway.env"
+[[ -f "$SETTINGS_DIR/highway.env" ]] || { echo 'Missing highway.env' >&2; exit 2; }
+source "$SETTINGS_DIR/highway.env"
 source "$SCRIPT_DIR/curvature_runtime_files.sh"
 : "${CONTAINER_NAME:?Set CONTAINER_NAME in highway.env}"
 DOCKER=(docker --context default)

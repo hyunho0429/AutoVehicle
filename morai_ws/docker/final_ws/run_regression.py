@@ -13,6 +13,7 @@ import sys
 
 
 SUITES = {
+    "roundabout": "src/mission/roundabout_mission/test",
     "avoidance": "src/control/purepursuit_mgeo/test",
     "lidar": "src/detection/lidar_perception/test",
     "camera": "src/detection/camera_perception/test",
@@ -33,6 +34,7 @@ def main():
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     source_roots = [workspace / "src/detection/camera_perception/src",
+                    workspace / "src/mission/roundabout_mission/src",
                     workspace / "src/control/purepursuit_mgeo/src",
                     workspace / "src/detection/lidar_perception/src",
                     workspace / "src/control/stopline_control/src",

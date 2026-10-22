@@ -1,3 +1,0 @@
-cat /etc/os-release
-lspci | grep -Ei 'vga|3d|display'
-nvidia-smi

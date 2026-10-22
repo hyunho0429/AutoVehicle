@@ -16,6 +16,8 @@ curvature_runtime_files() (
       src/detection/camera_perception/lane/mgeo/R_KR_PR_K-city_2025/intersection_controller_set.json \
       src/detection/camera_perception/lane/mgeo/R_KR_PR_K-city_2025/traffic_light_set.json \
       src/control/purepursuit_mgeo/src/purepursuit_mgeo/longitudinal_controller.py \
+      src/control/purepursuit_mgeo/src/purepursuit_mgeo/mission_speed_gate.py \
+      src/bringup/morai_bringup/package.xml \
       data/routes/2026_molit_comp_global_path.txt \
       docker/final_ws/curvature_runtime_files.sh \
       docker/final_ws/install_curvature_signal.sh \
@@ -23,10 +25,15 @@ curvature_runtime_files() (
       docker/final_ws/highway-test.env.example \
       docker/final_ws/diagnose_curvature_signal.py \
       docker/final_ws/check_highway_launch.py \
+      docker/final_ws/run_regression.py \
       docker/final_ws/smoke_models.py
+    printf '%s\n' src/bringup/morai_bringup/launch/merge_ws_drive.launch
+    find config/roundabout docker/merge_ws -type f ! -name highway.env ! -name highway-test.env ! -name '*.bak' ! -name '*.pyc' ! -path '*/__pycache__/*'
     local package
     for package in \
       src/experimental/curvature_speed_purepursuit \
+      src/mission/roundabout_mission \
+      src/detection/lidar_perception \
       src/control/turn_signal_controller src/control/stopline_control \
       src/detection/camera_perception \
       src/localization/ekf_local_enu src/localization/gps_mgeo_converter \
@@ -40,6 +47,7 @@ curvature_runtime_files() (
     find src/localization/ekf_local_enu/launch src/localization/gps_mgeo_converter/launch \
       src/localization/morai_udp_bridge/launch src/localization/morai_udp_drive_bridge/launch \
       -type f -name '*.launch'
+    find src/detection/lidar_perception/launch src/detection/lidar_perception/msg src/detection/lidar_perception/rviz -type f
     find src/detection/camera_perception/lane src/detection/camera_perception/post_processing \
       -maxdepth 1 -type f -name '*.py'
     find src/detection/camera_perception/web -type f
