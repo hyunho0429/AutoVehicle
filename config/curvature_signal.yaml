@@ -1,0 +1,41 @@
+# Four signalized areas on the fixed route. The last area has two successive
+# mapped stop lines (RIGHT and LEFT). The far-side LCS01 lane-control signal
+# is not treated as an ordinary intersection. The route remains the steering
+# reference. CAM4 projection uses the user's MORAI sensor settings below.
+signal_camera:
+  calibrated: true
+  width: 640
+  height: 480
+  horizontal_fov_deg: 90.0
+  x: 3.43
+  y: 0.01
+  z: 0.61
+  pitch_deg: 0.0
+  yaw_deg: 0.0
+signalized_context_ids:
+  - "mgeo:A2256W000215:0"  # 208 m, STRAIGHT
+  - "mgeo:A2256W000222:0"  # 316 m, STRAIGHT
+  - "mgeo:A2256W000599:0"  # 437 m, STRAIGHT
+  - "mgeo:A2256W000318:0"  # 551 m, RIGHT
+  - "mgeo:A2256W000083:0"  # 610 m, LEFT
+
+# These two vehicle heads are on the same A2256W000599 route link and in one
+# IntTL3 controller phase. Require both detected indications to agree before
+# resolving an overlapping projection from another mapped signal.
+correlated_signal_heads:
+  "mgeo:A2256W000599:0": ["C1256W000016", "C1256W000018"]
+
+input_timeout_sec: 0.5
+signal_timeout_sec: 0.8
+max_route_error_m: 3.0
+route_stopline_match_tolerance_m: 4.0
+green_release_max_sec: 10.0
+green_release_max_m: 55.0
+green_release_start_distance_m: 45.0
+stop_tolerance_m: 0.03
+accel_rise_rate_per_sec: 0.5
+turn_max_heading_error_deg: 60.0
+turn_max_lateral_error_m: 1.5
+turn_exit_heading_error_deg: 15.0
+turn_exit_lateral_error_m: 0.75
+turn_exit_overrun_m: 3.0

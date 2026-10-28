@@ -1,0 +1,9 @@
+{
+  "workspace": "/root/morai_integration_test/AutoVehicle/morai_ws",
+  "files": [
+    {
+      "path": "src/localization/ekf_local_enu/scripts/ekf_local_enu_node.py",
+      "sha": "ae370faf3905bb2641ef06791568d6276090e7a68272b667ddb361698bf2c4ad"
+    }
+  ]
+}

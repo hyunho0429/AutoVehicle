@@ -1,0 +1,21 @@
+{
+  "workspace": "/root/morai_integration_test/AutoVehicle/morai_ws",
+  "files": [
+    {
+      "path": "src/localization/ekf_local_enu/scripts/ekf_local_enu_node.py",
+      "sha": "49dd48054c5744d5f1fa8cc70eb81cbe03c4dba376c5e6eaf7fe7a0ebe2e3ce7"
+    },
+    {
+      "path": "src/control/turn_signal_controller/scripts/maneuver_fusion_node.py",
+      "sha": "a5b7253f52e9d4987d4c083816db72670c2e5bb5d6e20a7b81e2426577424c26"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/scripts/v61_obstacle_avoidance_node.py",
+      "sha": "4868ff5f6337fbae6bde71a013f8b60efb524468dc8dd3ed697687dadcb6ed2d"
+    },
+    {
+      "path": "src/bringup/morai_bringup/launch/integrated_obstacle_v61.launch",
+      "sha": "60e3715a4f5525462497f61f158695fe0f63b858178ecf7d51474a344d644e33"
+    }
+  ]
+}

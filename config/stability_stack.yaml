@@ -1,0 +1,19 @@
+# 원본 센서 기반 안정성 스택 설정.
+
+topics:
+  gps: /localization/gps
+  imu: /Imu
+  gps_health: /localization/gps_health
+  sensor_quality: /localization/sensor_quality
+  lane: /detection/lane
+  nominal_command: /control/ctrl_cmd
+  camera_stable_command: /control/camera_stable_cmd
+  final_command: /ctrl_cmd
+
+camera_stability:
+  enabled: false
+  lateral_gain: 0.15
+  heading_gain: 0.35
+  lateral_sign: 1.0
+  heading_sign: 1.0
+  max_steering_rate_rad_s: 0.8

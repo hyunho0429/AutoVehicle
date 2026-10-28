@@ -1,0 +1,9 @@
+{
+  "workspace": "/root/morai_integration_test/AutoVehicle/morai_ws",
+  "files": [
+    {
+      "path": "src/control/turn_signal_controller/scripts/maneuver_fusion_node.py",
+      "sha": "5585808f300a4af5219ec1ce2987fecd201255d6b1774a2ea316c45b30355a75"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "workspace": "/root/morai_integration_test/AutoVehicle/morai_ws",
+  "files": [
+    {
+      "path": "src/bringup/morai_bringup/launch/integrated_obstacle_v61.launch",
+      "existed": true,
+      "installed_sha": "21e8dc65e4bf47ac0f06af721459acfce40042e583e406207be745164804b1b9"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/scripts/tunnel_clearance_obstacle_state_node.py",
+      "existed": true,
+      "installed_sha": "4e73fbee04898578b07c66af30c301e3d1c7b5796f2e1b69682a4945d8b7f0b2"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/scripts/v61_highway_with_avoidance_node.py",
+      "existed": true,
+      "installed_sha": "75a4306178f6d982391ab31eb301bab327e95cda7074cf198df2f6e8de52e968"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/scripts/v61_obstacle_avoidance_node.py",
+      "existed": true,
+      "installed_sha": "c7b48302af8350b555d387d26accc29f6d86eeef34bc2b987a2444200b7afb70"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/src/purepursuit_mgeo/tunnel_clearance_fsm.py",
+      "existed": true,
+      "installed_sha": "0384dd7f68694a43417d492f8181f70b04a80573a2d05160a85c94592d462329"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/src/purepursuit_mgeo/tunnel_clearance_planner.py",
+      "existed": true,
+      "installed_sha": "dd0c06b2773fda320afb7ccb5b23067eebe8a8c19fbffcab4132de47827a9117"
+    },
+    {
+      "path": "src/control/purepursuit_mgeo/CMakeLists.txt",
+      "existed": true,
+      "installed_sha": "8ae4c06b0ec687c4f4c2af46a76f66f6fac90b2e1e9b0a939f4828a7a75a2e65"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "workspace": "/root/morai_integration_test/AutoVehicle/morai_ws",
+  "files": [
+    {
+      "path": "src/control/purepursuit_mgeo/scripts/v61_obstacle_avoidance_node.py",
+      "sha": "160af611676bcabe7c1d821969fad45acd839b8bf2fbda04db2fe37b6ebf2d2d"
+    },
+    {
+      "path": "src/control/turn_signal_controller/scripts/maneuver_fusion_node.py",
+      "sha": "4e45f7c9a02be7f8a65b5fa4dd3759f57e15f34eb40789a93ae392122fa1867b"
+    }
+  ]
+}

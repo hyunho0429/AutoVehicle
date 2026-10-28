@@ -1,0 +1,25 @@
+
+# ROS 자동 생성 파일
+/build/
+/devel/
+/install/
+/log/
+/logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# ROS bag
+*.bag
+*.db3
+*.active
+
+# 인증 정보
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+

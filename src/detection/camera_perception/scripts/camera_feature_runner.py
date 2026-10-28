@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Run the integrated object or lane detector under roslaunch."""
+
+import argparse
+import math
+import os
+from pathlib import Path
+import sys
+
+
+def default_stack_root():
+    # source layout: <root>/src/detection/camera_perception/scripts/this_file.py
+    return str(Path(__file__).resolve().parents[4])
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=("lane", "yolo"), required=True)
+    parser.add_argument("--camera-stack-root", default=default_stack_root())
+    parser.add_argument("--cam-ip", required=True)
+    parser.add_argument("--cam-port", type=int, required=True)
+    parser.add_argument("--base-model", default="yolov8s.pt")
+    parser.add_argument("--custom-model", default="best0917.pt")
+    parser.add_argument("--confidence", type=float, default=0.4)
+    parser.add_argument("--inference-size", type=int, default=416)
+    parser.add_argument("--signal-roi", type=float, nargs=4,
+                        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+                        default=(0.3, 0.05, 0.6, 0.6),
+                        help="Normalized signal crop bounds, each between 0 and 1")
+    parser.add_argument("--signal-full-frame", type=int, choices=(0, 1), default=1,
+                        help="Also infer signals outside the configured crop")
+    parser.add_argument("--window-size", type=int, default=5,
+                        help="Signal class smoothing window in frames")
+    parser.add_argument("--display-fps", type=float, default=0.0)
+    parser.add_argument("--cpu-threads", type=int, default=0)
+    parser.add_argument("--show-raw-preview", type=int, choices=(0, 1), default=0)
+    parser.add_argument("--traffic-light-topic", default="/detection/traffic_light")
+    parser.add_argument("--obstacle-topic", default="/detection/obstacle")
+    parser.add_argument("--lane-checkpoint", default="")
+    parser.add_argument("--lane-cam-set", default="")
+    parser.add_argument("--lane-device", default="")
+    parser.add_argument("--lane-every", type=int, default=1)
+    parser.add_argument("--lane-scale", type=float, default=1.0)
+    parser.add_argument("--lane-bev", action="store_true")
+    parser.add_argument("--lane-ros-publish", action="store_true")
+    parser.add_argument(
+        "--dashed-lane-topic",
+        default="/perception/camera/dashed_lane_detected",
+    )
+    parser.add_argument(
+        "--left-solid-lane-topic",
+        default="/perception/camera/left_solid_lane_detected",
+    )
+    parser.add_argument(
+        "--left-yellow-solid-lane-topic",
+        default="/perception/camera/left_yellow_solid_lane_detected",
+    )
+    parser.add_argument(
+        "--right-solid-lane-topic",
+        default="/perception/camera/right_solid_lane_detected",
+    )
+    parser.add_argument(
+        "--stopline-detected-topic",
+        default="/perception/camera/stopline_detected",
+    )
+    parser.add_argument(
+        "--stopline-distance-topic",
+        default="/perception/camera/stopline_distance_m",
+    )
+    parser.add_argument(
+        "--stopline-topic",
+        default="/perception/camera/stopline",
+    )
+    parser.add_argument("--lane-detection-topic", default="/detection/lane")
+    parser.add_argument("--lane-info-topic", default="")
+    parser.add_argument(
+        "--lane-quality-topic", default="/perception/camera/lane_quality"
+    )
+    parser.add_argument(
+        "--car-detected-topic", default="/perception/camera/car_detected"
+    )
+    parser.add_argument(
+        "--person-detected-topic", default="/perception/camera/person_detected"
+    )
+    args, _ = parser.parse_known_args()
+    if args.mode == "yolo":
+        x_min, y_min, x_max, y_max = args.signal_roi
+        if (not all(math.isfinite(value) for value in args.signal_roi)
+                or not 0.0 <= x_min < x_max <= 1.0
+                or not 0.0 <= y_min < y_max <= 1.0):
+            parser.error("--signal-roi requires finite 0 <= XMIN < XMAX <= 1 and 0 <= YMIN < YMAX <= 1")
+        if args.window_size < 1:
+            parser.error("--window-size must be a positive integer")
+
+    try:
+        import rospkg
+        package_root = Path(rospkg.RosPack().get_path("camera_perception"))
+    except ImportError:
+        package_root = Path(__file__).resolve().parents[1]
+    except rospkg.ResourceNotFound:
+        package_root = Path(__file__).resolve().parents[1]
+    if args.mode == "lane":
+        target = package_root / "lane" / "live_overlay.py"
+        target_args = [
+            "--ip", args.cam_ip,
+            "--port", str(args.cam_port),
+            "--every", str(args.lane_every),
+            "--scale", str(args.lane_scale),
+        ]
+        if args.lane_checkpoint:
+            target_args.extend(("--checkpoint", args.lane_checkpoint))
+        if args.lane_cam_set:
+            target_args.extend(("--cam-set", args.lane_cam_set))
+        if args.lane_device and args.lane_device.lower() != "auto":
+            target_args.extend(("--device", args.lane_device))
+        if args.lane_bev:
+            target_args.append("--bev")
+        if args.lane_ros_publish:
+            target_args.extend(
+                (
+                    "--ros-publish",
+                    "--dashed-lane-topic", args.dashed_lane_topic,
+                    "--left-solid-lane-topic", args.left_solid_lane_topic,
+                    "--left-yellow-solid-lane-topic",
+                    args.left_yellow_solid_lane_topic,
+                    "--right-solid-lane-topic", args.right_solid_lane_topic,
+                    "--stopline-detected-topic", args.stopline_detected_topic,
+                    "--stopline-distance-topic", args.stopline_distance_topic,
+                    "--stopline-topic", args.stopline_topic,
+                    "--lane-detection-topic", args.lane_detection_topic,
+                    "--lane-quality-topic", args.lane_quality_topic,
+                )
+            )
+            if args.lane_info_topic:
+                target_args.extend(("--lane-info-topic", args.lane_info_topic))
+    else:
+        target = package_root / "scripts" / "camera_object_detection_node.py"
+        target_args = [
+            "--cam-ip", args.cam_ip,
+            "--cam-port", str(args.cam_port),
+            "--base-model", args.base_model,
+            "--custom-model", args.custom_model,
+            "--confidence", str(args.confidence),
+            "--inference-size", str(args.inference_size),
+            "--signal-full-frame", str(args.signal_full_frame),
+            "--window-size", str(args.window_size),
+            "--display-fps", str(args.display_fps),
+            "--cpu-threads", str(args.cpu_threads),
+            "--show-raw-preview", str(args.show_raw_preview),
+            "--car-detected-topic", args.car_detected_topic,
+            "--person-detected-topic", args.person_detected_topic,
+            "--traffic-light-topic", args.traffic_light_topic,
+            "--obstacle-topic", args.obstacle_topic,
+        ]
+        target_args.extend(["--signal-roi"] + [str(value) for value in args.signal_roi])
+
+    if not target.is_file():
+        parser.error(f"camera feature script not found: {target}")
+
+    os.chdir(str(package_root))
+    os.execv(sys.executable, [sys.executable, str(target)] + target_args)
+
+
+if __name__ == "__main__":
+    main()
