@@ -1,0 +1,50 @@
+<launch>
+  <!-- Short entry point for the test/merged highway stack. -->
+  <arg name="morai_host_ip" default="$(optenv MORAI_IP 192.168.0.147)" />
+  <arg name="enable_control" default="false" />
+
+  <!-- Conservative first-run speeds; override them on the roslaunch command. -->
+  <arg name="max_speed_kph" default="5.0" />
+  <arg name="highway_cruise_kph" default="5.0" />
+  <arg name="highway_max_speed_kph" default="7.2" />
+
+  <arg name="ego_status_port" default="1911" />
+  <arg name="control_remote_port" default="9093" />
+  <arg name="control_source_port" default="9094" />
+  <arg name="roi_lane_port" default="1101" />
+  <arg name="roi_yolo_port" default="1131" />
+  <arg name="roi_lidar_host_port" default="2000" />
+  <arg name="roi_lidar_port" default="2001" />
+
+  <arg name="enable_yolo" default="true" />
+  <arg name="enable_obstacle_avoidance" default="true" />
+  <arg name="lidar_x_m" default="0.0" />
+  <arg name="lidar_y_m" default="0.0" />
+  <arg name="lidar_z_m" default="0.0" />
+  <arg name="lidar_yaw_deg" default="0.0" />
+
+  <include file="$(find morai_bringup)/launch/final_ws_highway_overtake_bringup.launch">
+    <!-- Resolve the workspace from this package in native and Docker builds. -->
+    <arg name="workspace_path" value="$(find morai_bringup)/../../.." />
+    <arg name="morai_host_ip" value="$(arg morai_host_ip)" />
+    <arg name="enable_control" value="$(arg enable_control)" />
+    <arg name="max_speed_kph" value="$(arg max_speed_kph)" />
+    <arg name="highway_cruise_kph" value="$(arg highway_cruise_kph)" />
+    <arg name="highway_max_speed_kph" value="$(arg highway_max_speed_kph)" />
+    <arg name="ego_status_port" value="$(arg ego_status_port)" />
+    <arg name="control_remote_port" value="$(arg control_remote_port)" />
+    <arg name="control_source_port" value="$(arg control_source_port)" />
+    <arg name="roi_lane_port" value="$(arg roi_lane_port)" />
+    <arg name="roi_yolo_port" value="$(arg roi_yolo_port)" />
+    <arg name="roi_lidar_host_port" value="$(arg roi_lidar_host_port)" />
+    <arg name="roi_lidar_port" value="$(arg roi_lidar_port)" />
+    <arg name="enable_yolo" value="$(arg enable_yolo)" />
+    <arg name="enable_obstacle_avoidance" value="$(arg enable_obstacle_avoidance)" />
+    <!-- This entry point is highway-only. -->
+    <arg name="enable_roundabout_merge_gate" value="false" />
+    <arg name="lidar_x_m" value="$(arg lidar_x_m)" />
+    <arg name="lidar_y_m" value="$(arg lidar_y_m)" />
+    <arg name="lidar_z_m" value="$(arg lidar_z_m)" />
+    <arg name="lidar_yaw_deg" value="$(arg lidar_yaw_deg)" />
+  </include>
+</launch>

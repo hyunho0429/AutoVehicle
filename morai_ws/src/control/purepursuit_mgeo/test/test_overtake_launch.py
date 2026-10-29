@@ -26,6 +26,7 @@ from purepursuit_mgeo.route_geometry import RoutePolyline  # noqa: E402
 LAUNCH_DIR = REPO / "src/bringup/morai_bringup/launch"
 SOURCE = LAUNCH_DIR / "final_ws_highway_bringup.launch"
 OUTPUT = LAUNCH_DIR / "final_ws_highway_overtake_bringup.launch"
+WRAPPER = LAUNCH_DIR / "merged_highway.launch"
 ROUTE_FILE = REPO / "data/routes/2026_molit_comp_global_path.txt"
 
 
@@ -79,6 +80,22 @@ class GeneratedLaunchTest(unittest.TestCase):
                         self.assertEqual(canonical(pa), canonical(pb))
                 continue
             self.assertEqual(canonical(a), canonical(b), (a.tag, name))
+
+    def test_short_wrapper_has_safe_defaults_and_single_include(self):
+        wrapper = parse(WRAPPER)
+        args = {a.get("name"): a.get("default") for a in wrapper.findall("arg")}
+        self.assertEqual(args["enable_control"], "false")
+        self.assertEqual(args["max_speed_kph"], "5.0")
+        self.assertEqual(args["highway_cruise_kph"], "5.0")
+        self.assertEqual(args["highway_max_speed_kph"], "7.2")
+        includes = wrapper.findall("include")
+        self.assertEqual(len(includes), 1)
+        self.assertTrue(includes[0].get("file").endswith(
+            "/launch/final_ws_highway_overtake_bringup.launch"))
+        forwarded = {a.get("name"): a.get("value") for a in includes[0].findall("arg")}
+        self.assertEqual(forwarded["workspace_path"], "$(find morai_bringup)/../../..")
+        self.assertEqual(forwarded["enable_roundabout_merge_gate"], "false")
+        self.assertEqual(forwarded["enable_control"], "$(arg enable_control)")
 
     def test_planner_keeps_the_integration_wiring(self):
         old = next(n for n in self.source.iter("node") if n.get("name") == "highway_lane_strategy")

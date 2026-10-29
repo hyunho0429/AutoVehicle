@@ -6,17 +6,26 @@ comes from `whddbs3061/car` branch `highway-overtake-v61` at `347d0c9`.
 Only its highway planner, ROS adapter, configuration, launch generator and
 focused tests are included.
 
-## Run
+## One-line launch
 
-Build the `morai_ws` catkin workspace, then launch:
+After building the `morai_ws` catkin workspace and sourcing `devel/setup.bash`,
+start perception and planning without sending vehicle control:
 
 ```bash
-roslaunch morai_bringup final_ws_highway_overtake_bringup.launch \
-  workspace_path:=/opt/AutoVehicle/morai_ws enable_control:=false
+roslaunch morai_bringup merged_highway.launch
 ```
 
-`enable_control` defaults to `false`. Set it to `true` only for an intended
-MORAI drive. The normal launch is still available under its original name.
+For an intended MORAI drive, pass the MORAI PC address and explicitly enable
+control. The wrapper starts at conservative 5.0/7.2 km/h highway speeds:
+
+```bash
+roslaunch morai_bringup merged_highway.launch morai_host_ip:=192.168.0.147 enable_control:=true
+```
+
+The address can instead come from `MORAI_IP`. `enable_control` deliberately
+defaults to `false`. The original launch remains available under its original
+name. `merged_highway.launch` disables the unrelated roundabout merge gate and
+resolves the workspace path from the installed `morai_bringup` package.
 
 ## Interface
 
