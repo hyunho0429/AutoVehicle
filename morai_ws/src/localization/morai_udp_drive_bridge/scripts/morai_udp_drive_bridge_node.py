@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MORAI EgoVehicleStatus 수신 및 EgoCtrlCmd 송신 ROS 브릿지."""
+"""MORAI Competition Vehicle Status RX and Ego Ctrl Cmd TX bridge."""
 
 from __future__ import annotations
 
@@ -10,15 +10,29 @@ import time
 from typing import Optional
 
 import rospy
-from geometry_msgs.msg import Vector3
-from morai_msgs.msg import CtrlCmd, EgoVehicleStatus
+from common.msg import CompetitionVehicleStatus
+from geometry_msgs.msg import Quaternion, Vector3
+from morai_msgs.msg import CtrlCmd
+from std_msgs.msg import Float64
 
 from morai_udp_drive_bridge.protocol import (
-    EGO_STATUS_PACKET_SIZE,
+    COMPETITION_STATUS_PACKET_SIZE,
     ProtocolError,
     build_ego_ctrl_cmd,
-    parse_ego_vehicle_status,
+    parse_competition_vehicle_status,
 )
+
+
+def quaternion_from_rpy(roll: float, pitch: float, yaw: float) -> Quaternion:
+    cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
+    cp, sp = math.cos(pitch * 0.5), math.sin(pitch * 0.5)
+    cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+    return Quaternion(
+        x=sr * cp * cy - cr * sp * sy,
+        y=cr * sp * cy + sr * cp * sy,
+        z=cr * cp * sy - sr * sp * cy,
+        w=cr * cp * cy + sr * sp * sy,
+    )
 
 
 class MoraiUdpDriveBridge:
@@ -26,9 +40,18 @@ class MoraiUdpDriveBridge:
         rospy.init_node("morai_udp_drive_bridge", anonymous=False)
 
         self.status_bind_ip = rospy.get_param("~status_bind_ip", "0.0.0.0")
-        self.status_port = int(rospy.get_param("~status_port", 909))
-        self.status_topic = rospy.get_param("~status_topic", "/Ego_topic")
-        self.status_frame_id = rospy.get_param("~status_frame_id", "map")
+        self.status_port = int(rospy.get_param("~status_port", 9099))
+        self.status_expected_source_port = int(
+            rospy.get_param("~status_expected_source_port", 9088)
+        )
+        self.status_expected_source_ip = rospy.get_param("~status_expected_source_ip", "")
+        self.status_topic = rospy.get_param(
+            "~status_topic", "/competition/vehicle_status"
+        )
+        self.speed_topic = rospy.get_param(
+            "~speed_topic", "/competition/vehicle_speed_mps"
+        )
+        self.status_frame_id = rospy.get_param("~status_frame_id", "base_link")
         # Read once at startup: dry-run output cannot be enabled at runtime.
         self.control_output_enabled = bool(rospy.get_param("~control_output_enabled", True))
         self.control_remote_ip = rospy.get_param("~control_remote_ip", "192.168.0.147")
@@ -50,7 +73,10 @@ class MoraiUdpDriveBridge:
         self.send_socket = None
         self.send_timer = None
 
-        self.status_pub = rospy.Publisher(self.status_topic, EgoVehicleStatus, queue_size=20)
+        self.status_pub = rospy.Publisher(
+            self.status_topic, CompetitionVehicleStatus, queue_size=20
+        )
+        self.speed_pub = rospy.Publisher(self.speed_topic, Float64, queue_size=20)
         rospy.Subscriber(self.command_topic, CtrlCmd, self.command_callback, queue_size=20)
 
         if self.control_output_enabled:
@@ -63,7 +89,7 @@ class MoraiUdpDriveBridge:
 
         self.status_thread = threading.Thread(
             target=self.status_receive_loop,
-            name="morai-ego-status-receiver",
+            name="morai-competition-status-receiver",
             daemon=True,
         )
         self.status_thread.start()
@@ -87,7 +113,7 @@ class MoraiUdpDriveBridge:
             receive_socket.bind((self.status_bind_ip, self.status_port))
         except OSError as exc:
             rospy.logfatal(
-                "EgoVehicleStatus UDP bind 실패 %s:%d: %s",
+                "CompetitionVehicleStatus UDP bind failed %s:%d: %s",
                 self.status_bind_ip,
                 self.status_port,
                 exc,
@@ -96,29 +122,46 @@ class MoraiUdpDriveBridge:
             return
         receive_socket.settimeout(0.5)
         rospy.loginfo(
-            "EgoVehicleStatus UDP bind %s:%d expected=%d bytes",
+            "CompetitionVehicleStatus UDP bind %s:%d expected=%d bytes source=%s:%d",
             self.status_bind_ip,
             self.status_port,
-            EGO_STATUS_PACKET_SIZE,
+            COMPETITION_STATUS_PACKET_SIZE,
+            self.status_expected_source_ip or "*",
+            self.status_expected_source_port,
         )
 
         try:
             while not rospy.is_shutdown() and not self.stop_event.is_set():
                 try:
-                    packet, sender = receive_socket.recvfrom(EGO_STATUS_PACKET_SIZE)
+                    packet, sender = receive_socket.recvfrom(65535)
                 except socket.timeout:
                     continue
                 except OSError as exc:
                     if not self.stop_event.is_set():
-                        rospy.logerr_throttle(5.0, "EgoVehicleStatus UDP 수신 오류: %s", exc)
+                        rospy.logerr_throttle(
+                            5.0, "CompetitionVehicleStatus UDP receive error: %s", exc
+                        )
                     break
 
+                if self.status_expected_source_ip and sender[0] != self.status_expected_source_ip:
+                    rospy.logwarn_throttle(
+                        5.0, "Competition status rejected from unexpected IP %s", sender[0]
+                    )
+                    continue
+                if self.status_expected_source_port > 0 and sender[1] != self.status_expected_source_port:
+                    rospy.logwarn_throttle(
+                        5.0,
+                        "Competition status rejected from unexpected source port %d",
+                        sender[1],
+                    )
+                    continue
+
                 try:
-                    measurement = parse_ego_vehicle_status(packet)
+                    measurement = parse_competition_vehicle_status(packet)
                 except (ProtocolError, ValueError) as exc:
                     rospy.logwarn_throttle(
                         5.0,
-                        "EgoVehicleStatus 패킷 폐기 sender=%s:%d len=%d error=%s",
+                        "CompetitionVehicleStatus rejected sender=%s:%d len=%d error=%s",
                         sender[0],
                         sender[1],
                         len(packet),
@@ -131,41 +174,39 @@ class MoraiUdpDriveBridge:
             receive_socket.close()
 
     def publish_status(self, measurement) -> None:
-        message = EgoVehicleStatus()
+        message = CompetitionVehicleStatus()
         if self.status_use_packet_time and measurement.sec > 0:
             message.header.stamp = rospy.Time(measurement.sec, measurement.nsec)
         else:
             message.header.stamp = rospy.Time.now()
         message.header.frame_id = self.status_frame_id
-        message.unique_id = 0
-        message.acceleration = Vector3(
-            measurement.acceleration_x_mps2,
-            measurement.acceleration_y_mps2,
-            measurement.acceleration_z_mps2,
+        message.control_mode = measurement.ctrl_mode
+        message.gear = measurement.gear
+        message.signed_velocity_kph = measurement.signed_velocity_kmh
+        message.map_data_id = measurement.map_data_id
+        message.orientation = quaternion_from_rpy(
+            math.radians(measurement.roll_deg),
+            math.radians(measurement.pitch_deg),
+            math.radians(measurement.heading_deg),
         )
-        message.position = Vector3(
-            measurement.pos_x_m,
-            measurement.pos_y_m,
-            measurement.pos_z_m,
+        message.velocity_x_mps = measurement.velocity_x_kmh / 3.6
+        message.angular_velocity = Vector3(
+            math.radians(measurement.angular_velocity_x_deg_s),
+            math.radians(measurement.angular_velocity_y_deg_s),
+            math.radians(measurement.angular_velocity_z_deg_s),
         )
-        message.velocity = Vector3(
-            measurement.velocity_x_kmh / 3.6,
-            measurement.velocity_y_kmh / 3.6,
-            measurement.velocity_z_kmh / 3.6,
-        )
-        message.heading = measurement.heading_deg
         message.accel = measurement.accel_pedal
         message.brake = measurement.brake_pedal
-        message.wheel_angle = measurement.steer_deg
+        message.steer_rad = math.radians(measurement.steer_deg)
+        message.packet_size = measurement.packet_length
         self.status_pub.publish(message)
+        self.speed_pub.publish(Float64(data=message.velocity_x_mps))
         rospy.loginfo_throttle(
             2.0,
-            "Ego UDP pos=(%.2f, %.2f, %.2f) vel=(%.2f, %.2f) heading=%.2f deg link=%s",
-            measurement.pos_x_m,
-            measurement.pos_y_m,
-            measurement.pos_z_m,
+            "Competition status vx=%.2fm/s rpy=(%.1f,%.1f,%.1f)deg link=%s",
             measurement.velocity_x_kmh / 3.6,
-            measurement.velocity_y_kmh / 3.6,
+            measurement.roll_deg,
+            measurement.pitch_deg,
             measurement.heading_deg,
             measurement.link_id,
         )

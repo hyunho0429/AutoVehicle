@@ -27,6 +27,9 @@ LAUNCH_DIR = REPO / "src/bringup/morai_bringup/launch"
 SOURCE = LAUNCH_DIR / "final_ws_highway_bringup.launch"
 OUTPUT = LAUNCH_DIR / "final_ws_highway_overtake_bringup.launch"
 WRAPPER = LAUNCH_DIR / "merged_highway.launch"
+PERCEPTION = LAUNCH_DIR / "perception_control_bringup.launch"
+TRANSPORT = LAUNCH_DIR / "morai_udp_ekf_purepursuit.launch"
+DRIVE_BRIDGE = REPO / "src/localization/morai_udp_drive_bridge/launch/morai_udp_drive_bridge.launch"
 ROUTE_FILE = REPO / "data/routes/2026_molit_comp_global_path.txt"
 
 
@@ -88,6 +91,11 @@ class GeneratedLaunchTest(unittest.TestCase):
         self.assertEqual(args["max_speed_kph"], "5.0")
         self.assertEqual(args["highway_cruise_kph"], "5.0")
         self.assertEqual(args["highway_max_speed_kph"], "7.2")
+        self.assertEqual(args["competition_status_host_port"], "9088")
+        self.assertEqual(args["competition_status_port"], "9099")
+        self.assertEqual(args["collision_host_port"], "9091")
+        self.assertEqual(args["collision_port"], "9092")
+        self.assertNotIn("ego_status_port", args)
         includes = wrapper.findall("include")
         self.assertEqual(len(includes), 1)
         self.assertTrue(includes[0].get("file").endswith(
@@ -96,6 +104,67 @@ class GeneratedLaunchTest(unittest.TestCase):
         self.assertEqual(forwarded["workspace_path"], "$(find morai_bringup)/../../..")
         self.assertEqual(forwarded["enable_roundabout_merge_gate"], "false")
         self.assertEqual(forwarded["enable_control"], "$(arg enable_control)")
+        self.assertEqual(
+            forwarded["competition_status_port"],
+            "$(arg competition_status_port)",
+        )
+        collision = next(n for n in wrapper.findall("node")
+                         if n.get("name") == "collision_evaluation_bridge")
+        params = {p.get("name"): p.get("value") for p in collision.findall("param")}
+        self.assertEqual(params["port"], "$(arg collision_port)")
+        self.assertEqual(params["expected_source_port"], "$(arg collision_host_port)")
+
+    def test_active_highway_controller_requires_competition_speed(self):
+        controller = next(n for n in self.output.iter("node")
+                          if n.get("name") == "adaptive_curvature_purepursuit")
+        params = {p.get("name"): p.get("value") for p in controller.findall("param")}
+        self.assertEqual(params["competition_speed_topic"],
+                         "/competition/vehicle_speed_mps")
+        self.assertEqual(params["require_competition_speed"], "true")
+        self.assertEqual(params["competition_speed_timeout_sec"], "0.5")
+
+    def test_v12_vehicle_network_contract_has_no_ego_status_path(self):
+        wrapper, perception = parse(WRAPPER), parse(PERCEPTION)
+        transport, bridge = parse(TRANSPORT), parse(DRIVE_BRIDGE)
+        wrapper_args = {a.get("name"): a.get("default") for a in wrapper.findall("arg")}
+        self.assertEqual(
+            {name: wrapper_args[name] for name in (
+                "competition_status_host_port", "competition_status_port",
+                "collision_host_port", "collision_port",
+                "control_remote_port", "control_source_port",
+            )},
+            {
+                "competition_status_host_port": "9088",
+                "competition_status_port": "9099",
+                "collision_host_port": "9091",
+                "collision_port": "9092",
+                "control_remote_port": "9093",
+                "control_source_port": "9094",
+            },
+        )
+        bridge_args = {a.get("name"): a.get("default") for a in bridge.findall("arg")}
+        self.assertEqual(bridge_args["status_port"], "9099")
+        self.assertEqual(bridge_args["status_expected_source_port"], "9088")
+        self.assertEqual(bridge_args["control_remote_port"], "9093")
+        self.assertEqual(bridge_args["control_bind_port"], "9094")
+
+        active_contract = "\n".join(
+            ET.tostring(root, encoding="unicode")
+            for root in (wrapper, self.output, perception, transport, bridge)
+        )
+        for forbidden in (
+            "/Ego_topic", "EgoVehicleStatus", "ego_status_port",
+            "/Object_topic", "ObjectStatusList",
+            "/GetTrafficLightStatus", "GetTrafficLightStatus",
+            "/ReplayInfo_topic", "TurnSignalLampControl",
+        ):
+            self.assertNotIn(forbidden, active_contract)
+
+        included = next(i for i in self.output.findall("include")
+                        if i.get("file").endswith("perception_control_bringup.launch"))
+        flags = {a.get("name"): a.get("value") for a in included.findall("arg")}
+        self.assertEqual(flags["enable_turn_signal"], "false")
+        self.assertEqual(flags["enable_maneuver_fusion"], "false")
 
     def test_planner_keeps_the_integration_wiring(self):
         old = next(n for n in self.source.iter("node") if n.get("name") == "highway_lane_strategy")

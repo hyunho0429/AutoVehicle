@@ -113,6 +113,20 @@ class AdaptiveTest(unittest.TestCase):
                 command = self.node.command_pub.publish.call_args.args[0]
                 self.assertEqual((command.accel, command.brake), (0., 1.))
 
+    def test_required_competition_speed_missing_or_stale_is_fail_safe(self):
+        self.node.require_competition_speed = True
+        command = self.tick()
+        self.assertEqual((command.accel, command.brake), (0., 1.))
+
+        self.node._competition_speed_cb(Message(0.0))
+        command = self.tick()
+        self.assertGreater(command.accel, 0.0)
+        self.assertEqual(command.brake, 0.0)
+
+        self.now += self.node.competition_speed_timeout_sec + 0.1
+        command = self.tick()
+        self.assertEqual((command.accel, command.brake), (0., 1.))
+
 
 if __name__ == '__main__':
     unittest.main()

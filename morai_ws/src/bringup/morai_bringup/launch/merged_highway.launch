@@ -8,7 +8,11 @@
   <arg name="highway_cruise_kph" default="5.0" />
   <arg name="highway_max_speed_kph" default="7.2" />
 
-  <arg name="ego_status_port" default="1911" />
+  <!-- v1.2 vehicle-network ports. Host ports are checked as UDP source ports. -->
+  <arg name="competition_status_host_port" default="9088" />
+  <arg name="competition_status_port" default="9099" />
+  <arg name="collision_host_port" default="9091" />
+  <arg name="collision_port" default="9092" />
   <arg name="control_remote_port" default="9093" />
   <arg name="control_source_port" default="9094" />
   <arg name="roi_lane_port" default="1101" />
@@ -31,7 +35,8 @@
     <arg name="max_speed_kph" value="$(arg max_speed_kph)" />
     <arg name="highway_cruise_kph" value="$(arg highway_cruise_kph)" />
     <arg name="highway_max_speed_kph" value="$(arg highway_max_speed_kph)" />
-    <arg name="ego_status_port" value="$(arg ego_status_port)" />
+    <arg name="competition_status_host_port" value="$(arg competition_status_host_port)" />
+    <arg name="competition_status_port" value="$(arg competition_status_port)" />
     <arg name="control_remote_port" value="$(arg control_remote_port)" />
     <arg name="control_source_port" value="$(arg control_source_port)" />
     <arg name="roi_lane_port" value="$(arg roi_lane_port)" />
@@ -47,4 +52,20 @@
     <arg name="lidar_z_m" value="$(arg lidar_z_m)" />
     <arg name="lidar_yaw_deg" value="$(arg lidar_yaw_deg)" />
   </include>
+
+  <!-- Receive-only allowed CollisionData network; it never feeds control. -->
+  <node pkg="mission_evaluator"
+        type="collision_evaluation_bridge.py"
+        name="collision_evaluation_bridge"
+        output="screen"
+        required="true">
+    <param name="bind_ip" value="0.0.0.0" />
+    <param name="port" value="$(arg collision_port)" />
+    <param name="allowed_sender_ip" value="$(arg morai_host_ip)" />
+    <param name="expected_source_port" value="$(arg collision_host_port)" />
+    <param name="packet_header" value="#CollisionData$" />
+    <!-- Set true only after a live 25.S4.MolitComp03 packet capture matches. -->
+    <param name="protocol_verified" value="false" />
+    <param name="output_topic" value="/evaluation/collision_snapshot" />
+  </node>
 </launch>

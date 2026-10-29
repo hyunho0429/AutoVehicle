@@ -2,9 +2,11 @@ cmake_minimum_required(VERSION 3.0.2)
 project(morai_udp_drive_bridge)
 
 find_package(catkin REQUIRED COMPONENTS
+  common
   geometry_msgs
   morai_msgs
   rospy
+  std_msgs
 )
 
 catkin_python_setup()

@@ -7,7 +7,8 @@
   <arg name="roundabout_link_set_file" default="$(find camera_perception)/lane/mgeo/R_KR_PR_K-city_2025/link_set.json" />
   <arg name="mission_regions_file" default="$(find purepursuit_mgeo)/config/route_mission_regions.json" />
   <arg name="morai_host_ip" default="192.168.0.147" />
-  <arg name="ego_status_port" default="1911" />
+  <arg name="competition_status_host_port" default="9088" />
+  <arg name="competition_status_port" default="9099" />
   <arg name="control_remote_port" default="9093" />
   <arg name="control_source_port" default="9094" />
   <arg name="enable_control" default="false" />
@@ -40,7 +41,8 @@
     <arg name="workspace_path" value="$(arg workspace_path)" />
     <arg name="path_file" value="$(arg path_file)" />
     <arg name="morai_host_ip" value="$(arg morai_host_ip)" />
-    <arg name="ego_status_port" value="$(arg ego_status_port)" />
+    <arg name="competition_status_host_port" value="$(arg competition_status_host_port)" />
+    <arg name="competition_status_port" value="$(arg competition_status_port)" />
     <arg name="control_remote_port" value="$(arg control_remote_port)" />
     <arg name="control_source_port" value="$(arg control_source_port)" />
     <arg name="enable_control" value="$(arg enable_control)" />
@@ -292,6 +294,9 @@
     <param name="wheelbase_m" value="3.0" />
     <param name="max_steering_rad" value="0.6981317008" />
     <param name="longl_cmd_type" value="1" />
+    <param name="competition_speed_topic" value="/competition/vehicle_speed_mps" />
+    <param name="require_competition_speed" value="true" />
+    <param name="competition_speed_timeout_sec" value="0.5" />
     <param name="speed_kp" value="0.8" />
     <param name="speed_ki" value="0.05" />
     <param name="control_rate_hz" value="20.0" />

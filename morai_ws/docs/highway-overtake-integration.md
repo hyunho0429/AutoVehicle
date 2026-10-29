@@ -27,6 +27,15 @@ defaults to `false`. The original launch remains available under its original
 name. `merged_highway.launch` disables the unrelated roundabout merge gate and
 resolves the workspace path from the installed `morai_bringup` package.
 
+The wrapper follows the competition v1.2 vehicle-network ports: Ctrl Cmd
+9094 -> 9093, CollisionData 9091 -> 9092, and Competition Vehicle Status
+9088 -> 9099. It does not start Ego Vehicle Status. The longitudinal controller
+requires fresh Competition `vx`; missing or stale status produces a full-brake
+command. GPS, IMU, camera and VLP16 remain as the separately allowed sensor
+UDP inputs described by rules 2-8 items 4-7. See
+`docs/COMPETITION_NETWORK_CONTRACT_KO.md` for the audit boundary and live-capture
+verification requirement.
+
 ## Interface
 
 - Inputs: `/avoidance_path_manager/trajectory`, `/localization/odometry`,

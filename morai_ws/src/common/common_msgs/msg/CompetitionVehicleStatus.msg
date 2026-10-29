@@ -1,0 +1,12 @@
+std_msgs/Header header
+int8 control_mode
+int8 gear
+float32 signed_velocity_kph
+int32 map_data_id
+geometry_msgs/Quaternion orientation
+float32 velocity_x_mps
+geometry_msgs/Vector3 angular_velocity
+float32 accel
+float32 brake
+float32 steer_rad
+uint32 packet_size

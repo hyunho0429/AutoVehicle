@@ -41,10 +41,15 @@ class TransportSafetyTest(unittest.TestCase):
         self.ros = Mock()
         self.ros.get_param.side_effect = lambda key, default: self.parameters.get(key, default)
         self.ros.is_shutdown.return_value = False
+        self.status_publisher = Mock()
+        self.speed_publisher = Mock()
+        self.ros.Publisher.side_effect = [self.status_publisher, self.speed_publisher]
         dependencies = {
             "rospy": self.ros,
-            "geometry_msgs.msg": SimpleNamespace(Vector3=vector3),
-            "morai_msgs.msg": SimpleNamespace(CtrlCmd=Message, EgoVehicleStatus=Message),
+            "common.msg": SimpleNamespace(CompetitionVehicleStatus=Message),
+            "geometry_msgs.msg": SimpleNamespace(Vector3=vector3, Quaternion=Message),
+            "morai_msgs.msg": SimpleNamespace(CtrlCmd=Message),
+            "std_msgs.msg": SimpleNamespace(Float64=Message),
         }
         spec = importlib.util.spec_from_file_location(
             "_transport_safety_bridge", PACKAGE / "scripts/morai_udp_drive_bridge_node.py"
@@ -105,9 +110,14 @@ class TransportSafetyTest(unittest.TestCase):
         self.assertIsNone(node.send_timer)
         self.socket_factory.assert_not_called()
         self.ros.Timer.assert_not_called()
-        self.ros.Publisher.assert_called_once_with("/Ego_topic", Message, queue_size=20)
+        self.ros.Publisher.assert_has_calls([
+            call("/competition/vehicle_status", Message, queue_size=20),
+            call("/competition/vehicle_speed_mps", Message, queue_size=20),
+        ])
         self.thread_factory.assert_called_once_with(
-            target=node.status_receive_loop, name="morai-ego-status-receiver", daemon=True
+            target=node.status_receive_loop,
+            name="morai-competition-status-receiver",
+            daemon=True,
         )
         self.thread_factory.return_value.start.assert_called_once_with()
         self.ros.on_shutdown.assert_called_once_with(node.shutdown)
@@ -153,12 +163,13 @@ class TransportSafetyTest(unittest.TestCase):
         self.socket_factory.side_effect = None
         self.socket_factory.return_value = receive_socket
         packet = struct.pack(
-            "<11s i 3i i i b b f i 24f 38s 2s",
-            b"#MoraiStatus", 102, 0, 0, 0, 10, 20, 2, 4, 7.2, 10000,
-            *[float(index) for index in range(24)], b"LINK_1", b"\r\n",
+            "<11s i 3i i i b b f i 16f 38s 2s",
+            b"#MoraiInfo$", 70, 0, 0, 0, 10, 20, 2, 4, 7.2, 10000,
+            *[float(index) for index in range(16)], b"LINK_1", b"\r\n",
         )
         receive_socket.recvfrom.side_effect = [
-            socket.timeout(), (packet, ("192.0.2.1", 909)), (packet, ("192.0.2.1", 909))
+            socket.timeout(), (packet, ("192.0.2.1", 9088)),
+            (packet, ("192.0.2.1", 9088))
         ]
         published = []
 
@@ -167,16 +178,17 @@ class TransportSafetyTest(unittest.TestCase):
             if len(published) == 2:
                 node.stop_event.set()
 
-        node.status_pub.publish.side_effect = publish
+        self.status_publisher.publish.side_effect = publish
         self.thread_factory.call_args.kwargs["target"]()
         self.socket_factory.assert_called_once_with(socket.AF_INET, socket.SOCK_DGRAM)
-        receive_socket.bind.assert_called_once_with(("0.0.0.0", 909))
+        receive_socket.bind.assert_called_once_with(("0.0.0.0", 9099))
         receive_socket.settimeout.assert_called_once_with(0.5)
         self.assertEqual(receive_socket.recvfrom.call_count, 3)
         self.assertEqual(len(published), 2)
-        self.assertEqual(published[0].header.frame_id, "map")
-        self.assertEqual(published[0].position.x, 8.0)
-        self.assertAlmostEqual(published[0].velocity.x, 14.0 / 3.6)
+        self.assertEqual(published[0].header.frame_id, "base_link")
+        self.assertAlmostEqual(published[0].velocity_x_mps, 11.0 / 3.6)
+        self.assertEqual(published[0].packet_size, 149)
+        self.assertEqual(self.speed_publisher.publish.call_count, 2)
         receive_socket.close.assert_called_once_with()
         node.send_timer_callback(None)
         node.shutdown()

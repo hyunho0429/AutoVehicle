@@ -42,8 +42,12 @@ case "$MODE" in
     CONTROL=false; [[ "$MODE" != drive ]] || CONTROL=true
     # YOLO's OpenCV display runs on a virtual screen; no xhost or host DISPLAY needed.
     "${DOCKER[@]}" exec -it "$CONTAINER_NAME" /usr/local/bin/morai-entrypoint \
-      xvfb-run -a roslaunch morai_bringup final_ws_highway_bringup.launch \
-      "morai_host_ip:=$MORAI_IP" "enable_control:=$CONTROL" "$@"
+      xvfb-run -a roslaunch morai_bringup merged_highway.launch \
+      "morai_host_ip:=$MORAI_IP" "enable_control:=$CONTROL" \
+      "competition_status_host_port:=${COMPETITION_STATUS_HOST_PORT:-9088}" \
+      "competition_status_port:=${COMPETITION_STATUS_PORT:-9099}" \
+      "collision_host_port:=${COLLISION_HOST_PORT:-9091}" \
+      "collision_port:=${COLLISION_PORT:-9092}" "$@"
     ;;
   test)
     "${DOCKER[@]}" exec "$CONTAINER_NAME" /usr/local/bin/morai-entrypoint \

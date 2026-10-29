@@ -1,9 +1,12 @@
 <launch>
-  <!-- MORAI Ego Status 수신 + CtrlCmd UDP 송신 -->
+  <!-- Competition Vehicle Status RX + Ego Ctrl Cmd TX. -->
   <arg name="status_bind_ip" default="0.0.0.0" />
-  <arg name="status_port" default="909" />
-  <arg name="status_topic" default="/Ego_topic" />
-  <arg name="status_frame_id" default="map" />
+  <arg name="status_port" default="9099" />
+  <arg name="status_expected_source_port" default="9088" />
+  <arg name="status_expected_source_ip" default="" />
+  <arg name="status_topic" default="/competition/vehicle_status" />
+  <arg name="speed_topic" default="/competition/vehicle_speed_mps" />
+  <arg name="status_frame_id" default="base_link" />
   <arg name="control_output_enabled" default="true" />
   <arg name="control_remote_ip" default="192.168.0.147" />
   <!-- MORAI Network Settings의 Cmd Control Destination Port와 맞춘다. -->
@@ -22,7 +25,10 @@
         output="screen">
     <param name="status_bind_ip" value="$(arg status_bind_ip)" />
     <param name="status_port" value="$(arg status_port)" />
+    <param name="status_expected_source_port" value="$(arg status_expected_source_port)" />
+    <param name="status_expected_source_ip" value="$(arg status_expected_source_ip)" />
     <param name="status_topic" value="$(arg status_topic)" />
+    <param name="speed_topic" value="$(arg speed_topic)" />
     <param name="status_frame_id" value="$(arg status_frame_id)" />
     <param name="control_output_enabled" type="bool" value="$(arg control_output_enabled)" />
     <param name="control_remote_ip" value="$(arg control_remote_ip)" />

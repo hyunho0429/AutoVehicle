@@ -109,6 +109,15 @@ class AdaptiveCurvaturePurePursuit:
         self.map_frame = rospy.get_param("~map_frame", "map")
         self.publish_command = bool(rospy.get_param("~publish_command", True))
         self.longl_cmd_type = int(rospy.get_param("~longl_cmd_type", 1))
+        self.competition_speed_topic = rospy.get_param(
+            "~competition_speed_topic", "/competition/vehicle_speed_mps"
+        )
+        self.require_competition_speed = bool(
+            rospy.get_param("~require_competition_speed", False)
+        )
+        self.competition_speed_timeout_sec = max(
+            0.1, float(rospy.get_param("~competition_speed_timeout_sec", 0.5))
+        )
 
         self.use_active_path = bool(rospy.get_param("~use_active_path", True))
         self.active_path_topic = rospy.get_param(
@@ -163,6 +172,8 @@ class AdaptiveCurvaturePurePursuit:
         self.trajectory_reason = ""
         self.latest_odom: Optional[Odometry] = None
         self.latest_odom_wall_time: Optional[float] = None
+        self.competition_speed_mps: Optional[float] = None
+        self.competition_speed_wall_time: Optional[float] = None
         self.active_points: List[PathPoint] = list(self.base_points)
         self.active_s: List[float] = list(self.base_s)
         self.active_curvature: List[float] = list(self.base_curvature)
@@ -223,6 +234,12 @@ class AdaptiveCurvaturePurePursuit:
         )
 
         rospy.Subscriber(self.pose_topic, Odometry, self._odom_cb, queue_size=10)
+        rospy.Subscriber(
+            self.competition_speed_topic,
+            Float64,
+            self._competition_speed_cb,
+            queue_size=10,
+        )
         if self.require_route_mission_ready:
             rospy.Subscriber(self.route_mission_ready_topic, Bool, self._route_mission_cb, queue_size=1)
         if self.enable_merge_gate:
@@ -292,6 +309,18 @@ class AdaptiveCurvaturePurePursuit:
             return
         self.latest_odom = msg
         self.latest_odom_wall_time = time.monotonic()
+
+    def _competition_speed_cb(self, msg: Float64) -> None:
+        try:
+            value = float(msg.data)
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            self.competition_speed_wall_time = None
+            return
+        if not math.isfinite(value):
+            self.competition_speed_wall_time = None
+            return
+        self.competition_speed_mps = max(0.0, value)
+        self.competition_speed_wall_time = time.monotonic()
 
     def _stop_cb(self, msg: Bool) -> None:
         if self.trajectory_topic:
@@ -547,7 +576,20 @@ class AdaptiveCurvaturePurePursuit:
             self.status_pub.publish(String(data=json.dumps({"stop":True,"reason":"odometry_missing_or_invalid"})))
             return
         now_wall = time.monotonic()
-        if now_wall - self.latest_odom_wall_time > 0.5:
+        competition_missing = (
+            self.competition_speed_mps is None
+            or self.competition_speed_wall_time is None
+        )
+        competition_stale = (
+            not competition_missing
+            and now_wall - self.competition_speed_wall_time
+            > self.competition_speed_timeout_sec
+        )
+        if self.require_competition_speed and competition_missing:
+            fault = "competition_vehicle_status_missing"
+        elif self.require_competition_speed and competition_stale:
+            fault = "competition_vehicle_status_stale"
+        elif now_wall - self.latest_odom_wall_time > 0.5:
             fault = "odometry_stale"
         else:
             fault = self._managed_fault(now_wall)
@@ -560,9 +602,13 @@ class AdaptiveCurvaturePurePursuit:
         pose = self.latest_odom.pose.pose
         x, y = float(pose.position.x), float(pose.position.y)
         yaw = _yaw_from_quaternion(pose.orientation)
-        speed_mps = math.hypot(
-            self.latest_odom.twist.twist.linear.x,
-            self.latest_odom.twist.twist.linear.y,
+        speed_mps = (
+            float(self.competition_speed_mps)
+            if not competition_missing and not competition_stale
+            else math.hypot(
+                self.latest_odom.twist.twist.linear.x,
+                self.latest_odom.twist.twist.linear.y,
+            )
         )
 
         with self._lock:
