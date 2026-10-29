@@ -15,6 +15,9 @@ import os
 import threading
 import time
 from typing import List, Optional, Tuple
+from collections import deque
+from curvature_speed_purepursuit.lane_centering import (
+    LaneCenteringAssist, lane_quality, lane_measurement, ideal_lane_reference)
 
 import rospy
 from geometry_msgs.msg import PointStamped, PoseStamped
@@ -40,6 +43,7 @@ from curvature_speed_purepursuit.planner import (
     interpolate_by_s,
     load_path_file,
     nearest_projection,
+    nearest_projection_on_loop,
     profile_value_at_s,
 )
 
@@ -72,6 +76,12 @@ class AdaptiveCurvaturePurePursuit:
             float(rospy.get_param("~duplicate_epsilon_m", 1.0e-6)),
         )
         self.base_s = cumulative_arc_lengths(self.base_points)
+        self.loop_route = bool(rospy.get_param("~loop_route", False))
+        self.global_segment = None
+        if self.loop_route and math.hypot(self.base_points[0].x-self.base_points[-1].x, self.base_points[0].y-self.base_points[-1].y) > 1.0:
+            raise ValueError("Loop route endpoints must connect")
+        self.cruise_speed_boost_kph = max(0., float(rospy.get_param("~cruise_speed_boost_kph", 0.)))
+        self.physical_lateral_accel = float(rospy.get_param("~physical_lateral_accel_mps2", 2.0))
         self.base_curvature = curvature_profile(
             self.base_points,
             half_window_points=max(1, int(rospy.get_param("~curvature_half_window_points", 1))),
@@ -85,7 +95,7 @@ class AdaptiveCurvaturePurePursuit:
         self.speed_source_name = "unavailable"
         if self.require_vehicle_speed and not self.vehicle_speed_topic:
             raise ValueError("Required vehicle speed needs a topic")
-        self.max_speed_kph = max(0.0, float(rospy.get_param("~max_speed_kph", 30.0)))
+        self.max_speed_kph = min(59.0, max(0.0, float(rospy.get_param("~max_speed_kph", 30.0))))
         self.lateral_accel_limit = max(
             1.0e-6, float(rospy.get_param("~lateral_accel_limit_mps2", 1.0))
         )
@@ -165,6 +175,23 @@ class AdaptiveCurvaturePurePursuit:
             ),
         )
 
+        self.enable_lane_centering = bool(rospy.get_param("~enable_lane_centering", False))
+        self.lane_min_confidence = float(rospy.get_param("~lane_centering_min_confidence", .65))
+        self.lane_timeout = float(rospy.get_param("~lane_centering_timeout_sec", .4))
+        self.lane_assist = LaneCenteringAssist(
+            weight=float(rospy.get_param("~lane_centering_weight", .35)),
+            max_correction_rad=float(rospy.get_param("~lane_centering_max_correction_rad", .08)),
+            min_frames=int(rospy.get_param("~lane_centering_min_frames", 4)),
+            timeout_sec=self.lane_timeout,
+            filter_tau_sec=float(rospy.get_param("~lane_centering_filter_tau_sec", .35)),
+            correction_rate_rad_s=float(rospy.get_param("~lane_centering_correction_rate_rad_s", .06)),
+            release_rate_rad_s=float(rospy.get_param("~lane_centering_release_rate_rad_s", .10)))
+        self.lane_pose_history = deque(maxlen=100)
+        self.lane_change_active = False
+        self.lane_change_at = None
+        self.observed_lane_width = None
+        self.observed_lane_stamp = None
+        self.lane_status_pub = rospy.Publisher("/experimental/curvature_lane_centering_status", String, queue_size=1)
         self._lock = threading.RLock()
         self._plan_lock = self._lock
         self.trajectory_topic = rospy.get_param("~trajectory_topic", "")
@@ -177,7 +204,7 @@ class AdaptiveCurvaturePurePursuit:
         self.active_speed_profile = self._make_speed_profile(
             self.active_s,
             self.active_curvature,
-            final_speed_mps=self.final_speed_kph / MPS_TO_KPH,
+            final_speed_mps=(self.max_speed_kph if self.loop_route else self.final_speed_kph) / MPS_TO_KPH,
         )
         self.active_path_received = not self.use_active_path
         self.active_path_wall_time: Optional[float] = None
@@ -249,6 +276,9 @@ class AdaptiveCurvaturePurePursuit:
                 queue_size=1,
             )
 
+        if self.enable_lane_centering:
+            rospy.Subscriber(rospy.get_param("~lane_info_topic", "/perception/camera/lane_info"), String, self._lane_cb, queue_size=1)
+            rospy.Subscriber("/highway_lane_strategy/fast_change_active", Bool, self._lane_change_cb, queue_size=1)
         self._publish_global_path()
         if self.vehicle_speed_topic:
             rospy.Subscriber(self.vehicle_speed_topic, EgoVehicleStatus, self._vehicle_speed_cb, queue_size=1)
@@ -263,6 +293,59 @@ class AdaptiveCurvaturePurePursuit:
             self.active_path_topic,
             self.max_speed_kph,
         )
+
+    def _lane_change_cb(self, msg):
+        self.lane_change_active = bool(msg.data)
+        self.lane_change_at = time.monotonic()
+
+    @plan_locked
+    def _lane_cb(self, msg):
+        try:
+            info = json.loads(msg.data)
+            stamp = float(info["timestamp"])
+            now, received = rospy.get_time(), time.monotonic()
+            if not math.isfinite(stamp) or not -.05 <= now-stamp <= self.lane_timeout:
+                raise ValueError("lane_observation_stale")
+            valid, quality, reason, confidence = lane_quality(info, self.lane_min_confidence)
+            if not valid:
+                raise ValueError(reason)
+            self.observed_lane_width = float(info['lane_width_m'])
+            self.observed_lane_stamp = stamp
+            pose_sample = min(self.lane_pose_history, key=lambda p: abs(p[0]-stamp), default=None)
+            if pose_sample is None or abs(pose_sample[0]-stamp) > .1:
+                raise ValueError("lane_pose_unsynchronized")
+            pose = pose_sample[1].pose.pose
+            # Compare with the EXECUTED path, not a different global lane.
+            projection = nearest_projection(self.active_points, self.active_s, pose.position.x, pose.position.y)
+            before, _ = interpolate_by_s(self.active_points, self.active_s, max(0., projection.progress_s-.75))
+            after, _ = interpolate_by_s(self.active_points, self.active_s, min(self.active_s[-1], projection.progress_s+.75))
+            route_yaw = math.atan2(after.y-before.y, after.x-before.x)
+            yaw_error = math.atan2(math.sin(route_yaw-_yaw_from_quaternion(pose.orientation)),
+                                   math.cos(route_yaw-_yaw_from_quaternion(pose.orientation)))
+            if projection.distance_m > 1.5 or abs(yaw_error) > .6:
+                raise ValueError("lane_route_disagreement")
+            reference = ideal_lane_reference(self.active_points, self.active_s, projection.progress_s)
+            measurement = lane_measurement(info)
+            if reference is None or measurement is None:
+                raise ValueError("lane_reference_unavailable")
+            self.lane_assist.observe(*measurement, reference, confidence, quality, stamp, received)
+        except (ValueError, KeyError, TypeError, AttributeError, OverflowError) as error:
+            self.lane_assist.invalidate(str(error))
+
+    def _lane_correction(self, steering, speed, ros_now, wall_now, dt, stop):
+        # Paint centering must not fight an intentional lane change or detour.
+        # The highway gate must be freshly inactive; otherwise fade the aid.
+        path_at = interpolate_by_s(self.active_points, self.active_s,
+            nearest_projection(self.active_points, self.active_s,
+                self.latest_odom.pose.pose.position.x, self.latest_odom.pose.pose.position.y).progress_s)[0]
+        global_error = nearest_projection(self.base_points, self.base_s, path_at.x, path_at.y).distance_m
+        enabled = (self.enable_lane_centering and self.lane_change_at is not None
+                   and 0 <= wall_now-self.lane_change_at <= .7
+                   and not self.lane_change_active and global_error < .6)
+        status = self.lane_assist.update(speed, ros_now, wall_now, dt, enabled=enabled, stopped=stop)
+        correction = self.steering_sign*status['correction_rad']
+        self.lane_status_pub.publish(String(data=json.dumps(status, allow_nan=False)))
+        return _clamp(steering+correction, -self.max_steering_rad, self.max_steering_rad), status
 
     def _make_speed_profile(
         self,
@@ -281,8 +364,11 @@ class AdaptiveCurvaturePurePursuit:
             max_decel_mps2=self.max_decel_mps2,
             initial_speed_mps=None,
             final_speed_mps=max(0.0, float(final_speed_mps)),
+            speed_boost_kph=self.cruise_speed_boost_kph,
+            physical_lateral_accel_mps2=self.physical_lateral_accel,
         )
 
+    @plan_locked
     def _odom_cb(self, msg: Odometry) -> None:
         header = getattr(msg, "header", None)
         stamp = getattr(header, "stamp", None)
@@ -300,6 +386,7 @@ class AdaptiveCurvaturePurePursuit:
                 or not math.isfinite(age) or not -0.05 <= age <= 0.5):
             self.latest_odom_wall_time = None
             return
+        self.lane_pose_history.append((stamp.to_sec(), msg))
         self.latest_odom = msg
         self.latest_odom_wall_time = time.monotonic()
 
@@ -371,6 +458,7 @@ class AdaptiveCurvaturePurePursuit:
         self.trajectory_reason = reason
 
     def _accept_active_path(self, msg: Path) -> None:
+        self.active_path_received = False
         header = getattr(msg, "header", None)
         stamp = getattr(header, "stamp", None)
         try:
@@ -410,6 +498,12 @@ class AdaptiveCurvaturePurePursuit:
             # previous geometry for diagnostics, but let freshness expire.
             rospy.logwarn_throttle(1.0, "active path is empty")
             return
+        with self._lock:
+            if points == self.active_points:
+                self.active_path_received = True
+                self.active_path_wall_time = time.monotonic() - max(0., age)
+                self.active_path_seq = int(msg.header.seq)
+                return
         try:
             points = clean_consecutive_duplicates(points)
             s_values = cumulative_arc_lengths(points)
@@ -517,9 +611,10 @@ class AdaptiveCurvaturePurePursuit:
             max(8.0, self.lookahead_min_m+self.lookahead_gain*speed_mps), 0.5)
         lookahead = adaptive_lookahead_m(speed_mps, self.lookahead_min_m, self.lookahead_gain,
             preview, self.lookahead_curvature_gain, self.lookahead_tight_min_m, self.lookahead_max_m)
-        target, _ = interpolate_by_s(
-            points, s_values, min(s_values[-1], progress_s + lookahead)
-        )
+        closed = self.loop_route and points == self.base_points
+        target_s = ((progress_s + lookahead) % s_values[-1] if closed
+                    else min(s_values[-1], progress_s + lookahead))
+        target, _ = interpolate_by_s(points, s_values, target_s)
         dx, dy = target.x - x, target.y - y
         c, s = math.cos(yaw), math.sin(yaw)
         target_x_body = c * dx + s * dy
@@ -527,7 +622,9 @@ class AdaptiveCurvaturePurePursuit:
         actual_lookahead = max(math.hypot(target_x_body, target_y_body), 1.0e-3)
         alpha = math.atan2(target_y_body, target_x_body)
         curvature = 2.0 * math.sin(alpha) / actual_lookahead
-        ff = profile_value_at_s(s_values, curvatures, min(s_values[-1],progress_s+0.75*lookahead))
+        ff_s = ((progress_s+0.75*lookahead) % s_values[-1] if closed
+                else min(s_values[-1], progress_s+0.75*lookahead))
+        ff = profile_value_at_s(s_values, curvatures, ff_s)
         w = self.steering_feedforward_weight
         steering = ((1-w)*math.atan(self.wheelbase_m*curvature)+w*math.atan(self.wheelbase_m*ff))*self.steering_sign
         return _clamp(steering, -self.max_steering_rad, self.max_steering_rad), target, actual_lookahead
@@ -601,7 +698,9 @@ class AdaptiveCurvaturePurePursuit:
         target_speed_kph = 0.0
         path_speed_limit_kph = 0.0
         progress_s = 0.0
-        global_projection = nearest_projection(self.base_points, self.base_s, x, y)
+        global_projection = (nearest_projection_on_loop(self.base_points, self.base_s, x, y, self.global_segment, 250)
+                             if self.loop_route else nearest_projection(self.base_points, self.base_s, x, y))
+        self.global_segment = global_projection.segment_index
         global_remaining = max(0.0, self.base_s[-1] - global_projection.progress_s)
         self.progress_pub.publish(Float64(global_projection.progress_s))
 
@@ -620,13 +719,18 @@ class AdaptiveCurvaturePurePursuit:
                 if self.use_target_speed_override
                 else self.max_speed_kph / MPS_TO_KPH,
             )
+            if (self.observed_lane_width is not None and self.observed_lane_width < 2.8
+                    and self.observed_lane_stamp is not None
+                    and -.05 <= now-self.observed_lane_stamp <= self.lane_timeout):
+                target_speed_mps = min(target_speed_mps, 25.0/MPS_TO_KPH)
             target_speed_kph = self._rate_limited_speed(target_speed_mps, dt) * MPS_TO_KPH
-            if global_remaining <= self.goal_tolerance_m:
+            if not self.loop_route and global_remaining <= self.goal_tolerance_m:
                 stop = True
         else:
             self.command_speed_mps = 0.0
             self.speed_controller.reset()
 
+        steering, lane_status = self._lane_correction(steering, speed_mps, now, now_wall, dt, stop)
         if stop:
             self.command_speed_mps, target_speed_kph = 0.0, 0.0
             self.speed_controller.reset()
@@ -642,7 +746,7 @@ class AdaptiveCurvaturePurePursuit:
             "trajectory_reason":self.trajectory_reason,"trajectory_seq":self.active_path_seq,
             "target_speed_kph":target_speed_kph,"measured_speed_kph":speed_mps*MPS_TO_KPH,
             "speed_source":self.speed_source_name,
-            "path_speed_limit_kph":path_speed_limit_kph,"curvature":curvature})))
+            "path_speed_limit_kph":path_speed_limit_kph,"curvature":curvature,"lane_centering":lane_status})))
         pedal = self.speed_controller.update(
             target_speed_kph,
             speed_mps * MPS_TO_KPH,

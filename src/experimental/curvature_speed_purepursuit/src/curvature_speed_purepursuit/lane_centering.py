@@ -193,13 +193,13 @@ def lane_quality(info, min_confidence):
         dy = left[0] - right[0]
         slope = 0.5 * (left[1] + right[1])
         normal_width = dy / math.hypot(1.0, slope)
-        if not _finite(normal_width) or not 2.7 <= normal_width <= 4.2:
+        if not _finite(normal_width) or not 2.3 <= normal_width <= 4.2:
             return reject('implausible_lane_width')
         if abs(middle[0] - 0.5 * (left[0] + right[0])) > 0.12:
             return reject('center_boundary_mismatch')
         widths.append(normal_width)
     spread = max(widths) - min(widths)
-    if spread > 0.7:
+    if spread > 1.2:
         return reject('lane_width_changes_too_fast')
     quality = _clamp(1.0 - spread / 1.0, 0.3, 1.0)
     return True, quality, 'both_boundaries_observed', minimum

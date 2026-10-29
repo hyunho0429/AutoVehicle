@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-29",
+  "base_repository": "x010806-sudo/morai_ws_full",
+  "base_commit": "b3e0747b0d9ad2a96f50da07a7dfee1f06d1f5c6",
+  "destination_repository": "shinejihun1227/AutoVehicle",
+  "destination_branch": "morai_ws_full",
+  "patch_archives": {
+    "v9_priority_overlay_v61.zip": {
+      "sha256": "83d005258f185f4539310804fef6e0c1eeaf16b81aafa06335154017fe6f60d9",
+      "bytes": 65773
+    },
+    "morai_dynamic_wait5_tunnel_patch.zip": {
+      "sha256": "c0420d1afa8cfd56c37e06814aa48665dc31ae1f932baaa558774f67f2b5c68a",
+      "bytes": 68138
+    }
+  },
+  "overlay_inputs": {
+    "src/control/purepursuit_mgeo/scripts/v61_obstacle_avoidance_node.py": {
+      "github_base_sha256": "4868ff5f6337fbae6bde71a013f8b60efb524468dc8dd3ed697687dadcb6ed2d",
+      "archive_sha256": "0848244e75c1f6b99df1b74f1c0c61e76fe984de51c1b8bc69f195bb5619e913",
+      "merged_sha256": "bd240427ca8c79cefe69068473d2105568b084abd9b8f5b3ebb916a95f27217d",
+      "note": "Source-reviewed rebase; archive base hashes target a different pre-patched workspace"
+    },
+    "src/control/purepursuit_mgeo/config/avoidance_regions.yaml": {
+      "github_base_sha256": null,
+      "archive_sha256": "5865b86a6df15c8f573cc5abbdf5108a1d4807802adb3c7301e7ededa9cc9a50",
+      "merged_sha256": "40f47b40dd1431386869575a0dd156ef33c73a9516a0d0247ae8af52d4e0e1df",
+      "note": "Source-reviewed rebase; archive base hashes target a different pre-patched workspace"
+    },
+    "src/control/purepursuit_mgeo/src/purepursuit_mgeo/dynamic_zone_guard.py": {
+      "github_base_sha256": null,
+      "archive_sha256": "f4b415f1e38df10fadf861ec3a668a14da3cfdc5900c358a275ef362d0cbff59",
+      "merged_sha256": "f4b415f1e38df10fadf861ec3a668a14da3cfdc5900c358a275ef362d0cbff59",
+      "note": "Source-reviewed rebase; archive base hashes target a different pre-patched workspace"
+    },
+    "src/control/turn_signal_controller/scripts/maneuver_fusion_node.py": {
+      "github_base_sha256": "5585808f300a4af5219ec1ce2987fecd201255d6b1774a2ea316c45b30355a75",
+      "archive_sha256": "dcca673255494cdf6e7a769e0c1c57879071d5c272e52d5039f0c97d5c82f393",
+      "merged_sha256": "8bf08a4ade275ec7317441747080e007c2007654f0a059e64933c31f345486a5",
+      "note": "Source-reviewed rebase; archive base hashes target a different pre-patched workspace"
+    },
+    "src/localization/ekf_local_enu/scripts/ekf_local_enu_node.py": {
+      "github_base_sha256": "49dd48054c5744d5f1fa8cc70eb81cbe03c4dba376c5e6eaf7fe7a0ebe2e3ce7",
+      "archive_sha256": "98e6928db60462d469d1fcbe9280daf4c76bb8f6d6b9dc899a18c4261605fe9c",
+      "merged_sha256": "98e6928db60462d469d1fcbe9280daf4c76bb8f6d6b9dc899a18c4261605fe9c",
+      "note": "Source-reviewed rebase; archive base hashes target a different pre-patched workspace"
+    },
+    "src/localization/ekf_local_enu/src/ekf_local_enu/distance_scale.py": {
+      "github_base_sha256": null,
+      "archive_sha256": "84d5e41a15d42daa0a552ac135ca6ede39a2409d49f4f3bfcf757c70698762fc",
+      "merged_sha256": "84d5e41a15d42daa0a552ac135ca6ede39a2409d49f4f3bfcf757c70698762fc",
+      "note": "Source-reviewed rebase; archive base hashes target a different pre-patched workspace"
+    },
+    "src/control/purepursuit_mgeo/scripts/highway_lane_strategy_node.py": {
+      "archive_sha256": "727aed23dc84a024644c4339e7361bb1f7825bac1ab44367999adb40dd17de0a",
+      "merged_sha256": "148f8c8cf4c0d10125d47ec8b8f5e67ff97bcb017f350fb57988b734ac49aa29",
+      "note": "V9 overlay retained; added timestamp heartbeat for v61 ownership contract"
+    }
+  },
+  "verification": {
+    "syntax_errors": [],
+    "suites": [
+      {
+        "suite": "integration_tests/patches",
+        "exit_code": 0,
+        "tests": 47
+      },
+      {
+        "suite": "integration_tests",
+        "exit_code": 0,
+        "tests": 26
+      },
+      {
+        "suite": "src/experimental/curvature_speed_purepursuit/test",
+        "exit_code": 0,
+        "tests": 32
+      },
+      {
+        "suite": "src/control/stopline_control/test",
+        "exit_code": 0,
+        "tests": 59
+      },
+      {
+        "suite": "src/control/turn_signal_controller/test",
+        "exit_code": 0,
+        "tests": 210
+      }
+    ],
+    "ros_build": false,
+    "morai_driving": false
+  }
+}

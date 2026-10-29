@@ -26,13 +26,13 @@ class Message:
 class AdaptiveTest(unittest.TestCase):
     def setUp(self):
         self.now = 100.
-        params = {'~max_speed_kph': 30., '~use_target_speed_override': True, '~enable_merge_gate': True}
+        params = {'~require_vehicle_speed': False, '~max_speed_kph': 30., '~use_target_speed_override': True, '~enable_merge_gate': True}
         ros = Mock()
         ros.get_param.side_effect = lambda key, default=None: params.get(key, default)
         ros.get_time.side_effect = lambda: self.now
         ros.Time.now.side_effect = lambda: NS(to_sec=lambda: self.now)
         modules = {'rospy': ros, 'geometry_msgs.msg': NS(PointStamped=Message, PoseStamped=Message),
-                   'morai_msgs.msg': NS(CtrlCmd=Message), 'nav_msgs.msg': NS(Odometry=Message, Path=Message),
+                   'morai_msgs.msg': NS(CtrlCmd=Message, EgoVehicleStatus=Message), 'nav_msgs.msg': NS(Odometry=Message, Path=Message),
                    'std_msgs.msg': NS(Bool=Message, Float64=Message, String=Message)}
         ros.Publisher.side_effect = lambda *a, **kw: Mock()
         spec = importlib.util.spec_from_file_location('adaptive_test_node', PACKAGE / 'scripts/adaptive_curvature_purepursuit_node.py')

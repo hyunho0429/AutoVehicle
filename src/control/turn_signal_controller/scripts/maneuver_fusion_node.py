@@ -22,6 +22,7 @@ from nav_msgs.msg import Odometry, Path as RosPath
 from std_msgs.msg import String
 from common.msg import ObjectInfoArray
 from camera_perception.traffic_signal import directional_observation, count_signal_housings
+from purepursuit_mgeo.dynamic_zone_guard import DynamicZoneGuard, constrain_pedals
 from purepursuit_mgeo.longitudinal_controller import VehicleSpeedSource
 from purepursuit_mgeo.plan_transport import read_trajectory
 
@@ -214,6 +215,10 @@ class ManeuverFusionNode:
                 self.map_heads = [dict(id=str(h["idx"]), x=h["point"][0], y=h["point"][1], z=h["point"][2],
                                              **({"facing_yaw_deg": h["heading"]} if h.get("heading") is not None else {}))
                                   for h in json.load(stream) if h.get("type") == "car"]
+        self.signal_pose_pair_tolerance = float(rospy.get_param("~signal_pose_pair_tolerance_sec", 0.05))
+        self.signal_projection_gate_px = float(rospy.get_param("~signal_projection_gate_px", 40.0))
+        if not 0.05 <= self.signal_pose_pair_tolerance <= 0.15 or not 25 <= self.signal_projection_gate_px <= 50:
+            raise ValueError("Invalid bounded signal association tolerance")
         self.pose_history = deque(maxlen=100)
         self.confirmation = SignalConfirmation()
         self.selection = Selection("UNKNOWN", 0.0, False, None, "route_context_unavailable")
@@ -248,6 +253,7 @@ class ManeuverFusionNode:
             settle_distance_m=float(rospy.get_param("~settle_distance_m", 0.0)),
             stop_tolerance_m=float(rospy.get_param("~stop_tolerance_m", 0.03)),
             signal_timeout_sec=self.signal_timeout,
+            green_confirmation_sec=float(rospy.get_param("~green_confirmation_sec", 0.15)),
         )
         self.core = StopLineControllerCore(**self.core_params)
         turn_defaults = dict(max_heading_error_deg=60., max_lateral_error_m=1.5,
@@ -318,6 +324,30 @@ class ManeuverFusionNode:
         self.green_release = None
         self.merge_gap = None
         self.merge_gap_at = None
+        self.dynamic_zone_guard = None
+        self.dynamic_zone_sample = None
+        self.dynamic_zone_status = None
+        self.dynamic_handoff_plan_sample = None
+        self.dynamic_guard_pub = rospy.Publisher("/integration/dynamic_guard/state", String, queue_size=1)
+        if bool(rospy.get_param("~dynamic_zone_enabled", False)):
+            self.dynamic_zone_guard = DynamicZoneGuard(
+                load_path_file(rospy.get_param("~path_file")), rospy.get_param("~avoidance_regions"),
+                expected_fingerprint=rospy.get_param("~avoidance_route_fingerprint", ""),
+                speed_kph=float(rospy.get_param("~dynamic_zone_speed_kph", 20.)),
+                approach_m=float(rospy.get_param("~dynamic_zone_approach_m", 40.)),
+                lookahead_m=float(rospy.get_param("~dynamic_zone_lookahead_m", 30.)),
+                vehicle_width_m=float(rospy.get_param("~dynamic_zone_vehicle_width_m", 1.892)),
+                margin_m=float(rospy.get_param("~dynamic_zone_margin_m", .3)),
+                clearance_extra_m=float(rospy.get_param("~dynamic_zone_clearance_extra_m", .3)),
+                clear_confirm_s=float(rospy.get_param("~dynamic_zone_clear_confirm_s", .6)),
+                timeout_s=float(rospy.get_param("~dynamic_zone_input_timeout_s", .6)),
+                prediction_s=float(rospy.get_param("~dynamic_zone_prediction_s", 2.)),
+                ego_front_m=float(rospy.get_param("~front_reference_offset_m", 3.845)),
+                min_obstacle_speed_mps=float(rospy.get_param("~dynamic_zone_min_obstacle_speed_mps", 2.)),
+                wait_before_static_s=float(rospy.get_param("~dynamic_zone_wait_before_static_s", 5.)),
+                tunnel_enabled=bool(rospy.get_param("~dynamic_zone_tunnel_enabled", True)))
+            rospy.Subscriber("/integration/avoidance/obstacle_states", String,
+                             self.dynamic_obstacles_callback, queue_size=1)
         self.state_pub = rospy.Publisher("/control/maneuver_status", String, queue_size=1)
         self.lamp_pub = rospy.Publisher("/control/turn_signal_state", String, queue_size=1)
         self.output_pub = rospy.Publisher(rospy.get_param("~output_command_topic", "/control/maneuver_cmd"), CtrlCmd, queue_size=1)
@@ -348,6 +378,62 @@ class ManeuverFusionNode:
             rospy.Subscriber("/stability/camera_fallback_status", String, self.fallback_status_callback, queue_size=1)
         rospy.on_shutdown(self.shutdown)
         self.timer = rospy.Timer(rospy.Duration(0.05), self.tick)
+
+    def dynamic_obstacles_callback(self, message):
+        try:
+            payload=json.loads(message.data)
+            if not isinstance(payload,dict):raise ValueError("not an object")
+        except (ValueError,TypeError):
+            payload={"timestamp":rospy.get_time(),"obstacles":None}
+        with self.lock:
+            self.dynamic_zone_sample=(payload,time.monotonic())
+
+    def dynamic_constraint(self, odom, now, ros_now):
+        guard=getattr(self,"dynamic_zone_guard",None)
+        if guard is None:return None
+        pose=None
+        if odom is not None and odom.value.header.frame_id=="map":
+            p=odom.value.pose.pose.position
+            pose=(float(p.x),float(p.y))
+        measured=(self.vehicle_speed_mps if self.vehicle_speed_mps is not None
+                  else self.odometry_speed_mps)
+        def current_path():
+            sample=self.executed_path_sample
+            if sample is None:return None
+            path,received=sample
+            if (0<=now-received<=self.timeout and path.header.frame_id=="map"
+                    and -.05<=ros_now-path.header.stamp.to_sec()<=self.timeout
+                    and len(path.poses)<=20000):
+                points=[(float(q.pose.position.x),float(q.pose.position.y)) for q in path.poses]
+                return points if all(math.isfinite(v) for p in points for v in p) else None
+            return None
+        status=guard.step(now,ros_now,pose,measured,self.dynamic_zone_sample,current_path,
+                          tunnel_mode=self.tunnel_mode_active(now,ros_now),
+                          detour_path=lambda: self.dynamic_detour_path(odom,now,ros_now))
+        status['timestamp']=ros_now
+        self.dynamic_guard_pub.publish(String(data=json.dumps(status,allow_nan=False)))
+        return status
+
+    def dynamic_detour_path(self, odom, now, ros_now):
+        sample=getattr(self,'dynamic_handoff_plan_sample',None)
+        executed_sample=self.executed_path_sample
+        if sample is None or executed_sample is None or odom is None or self.event is not None:
+            return None
+        path,received=sample
+        executed,executed_at=executed_sample
+        if (not all(0<=now-t<=self.timeout for t in (received,executed_at))
+                or not all(-.05<=ros_now-p.header.stamp.to_sec()<=self.timeout for p in (path,executed))
+                or path.header.frame_id!='map' or executed.header.frame_id!='map'
+                or not 2<=len(path.poses)<=20000 or len(path.poses)!=len(executed.poses)):
+            return None
+        for a,b in zip(path.poses,executed.poses):
+            for axis in ('x','y','z'):
+                av,bv=float(getattr(a.pose.position,axis)),float(getattr(b.pose.position,axis))
+                if not finite(av) or not finite(bv) or abs(av-bv)>1e-6:return None
+        p=odom.value.pose.pose;q=p.orientation
+        yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
+        points=[(p.pose.position.x,p.pose.position.y) for p in path.poses]
+        return points if corridor_matches(points,p.position.x,p.position.y,yaw) else None
 
     def highway_path_callback(self, message):
         with self.lock:
@@ -431,6 +517,8 @@ class ManeuverFusionNode:
             sample = None
         with self.lock:
             self.frenet_trajectory_sample = sample
+            self.dynamic_handoff_plan_sample = (sample if sample is not None
+                and data.get("dynamic_static_requested") is True else None)
             # A plan and the controller's executed path arrive on independent
             # topics. Keep recent candidates to tolerate that one-tick ordering.
             recent = getattr(self, "tunnel_plan_samples", [])
@@ -720,18 +808,6 @@ class ManeuverFusionNode:
                 or objects.stamp != self.selection_stamp
                 or not self.route_release_available(event, now, ros_now)):
             return False
-        if selection.reason == "no_match":
-            for obj in objects.value.objects:
-                try:
-                    confidence = float(obj.conf)
-                except (AttributeError, TypeError, ValueError, OverflowError):
-                    return False
-                if not finite(confidence) or confidence > 1.0:
-                    return False
-                if confidence >= 0.5:
-                    state, _ = directional_observation((obj,))
-                    if not signal_permits(state, event["direction"], self.right_on_green):
-                        return False
         return True
 
     def suspend_entry_permission(self):
@@ -936,6 +1012,9 @@ class ManeuverFusionNode:
                 continue
             chosen = self.associate_signal_frame(sample, event)
             if chosen is None:
+                if (self.core._green_confirmed(now, ros_now)
+                        and now-sample.received < 0.1):
+                    return  # Await this frame; do not erase the checked prior frame.
                 self.selection = Selection(reason="signal_pose_unsynchronized")
                 # A short pose-pair wait is not a negative observation.
                 # Preserve confirmation history, but the tick passes
@@ -1055,10 +1134,11 @@ class ManeuverFusionNode:
 
     def associate_signal_frame(self, objects, event):
         """None means await matching pose, not consume an UNKNOWN image."""
-        # Closest timestamp must be within 50ms; no extrapolation across turns.
+        # Pair with the closest source-time pose within the configured bound.
+        # No inferred map identity is substituted when the pair is unavailable.
         pose_sample = min(self.pose_history, key=lambda p: abs(p.stamp - objects.stamp), default=None)
         if (pose_sample is None or pose_sample.value.header.frame_id != "map"
-                or abs(pose_sample.stamp - objects.stamp) > 0.05):
+                or abs(pose_sample.stamp - objects.stamp) > getattr(self, "signal_pose_pair_tolerance", 0.05)):
             return None
         pose = pose_sample.value.pose.pose
         try:
@@ -1074,10 +1154,16 @@ class ManeuverFusionNode:
             targets = {h["id"]: project_signal(h, ego, self.camera) for h in event["signal_points"]}
             others = {h["id"]: project_signal(h, ego, self.camera) for h in self.map_heads
                       if h["id"] not in targets}
+            group = event.get("source") == "route_camera"
+            pair = group and event.get("id") in self.correlated_signal_heads
             selection = associate(objects.value.objects, targets, others,
-                                  allow_target_group=event.get("source") == "route_camera",
-                                  allow_correlated_pair=(event.get("source") == "route_camera"
-                                                         and event.get("id") in self.correlated_signal_heads))
+                                  allow_target_group=group, allow_correlated_pair=pair)
+            # Keep a valid precise match; widening every gate would create
+            # spurious ambiguity with another junction in the same image.
+            if selection.reason == "no_match" and self.signal_projection_gate_px > 25.0:
+                selection = associate(objects.value.objects, targets, others,
+                    allow_target_group=group, allow_correlated_pair=pair,
+                    gate_px=self.signal_projection_gate_px)
         except (ValueError, TypeError, AttributeError, KeyError):
             selection = Selection("UNKNOWN", 0.0, False, None, "signal_projection_invalid")
         return selection
@@ -1088,7 +1174,7 @@ class ManeuverFusionNode:
             return {}
         pose_sample = min(self.pose_history, key=lambda p: abs(p.stamp - objects.stamp), default=None)
         if (pose_sample is None or pose_sample.value.header.frame_id != "map"
-                or abs(pose_sample.stamp - objects.stamp) > 0.05):
+                or abs(pose_sample.stamp - objects.stamp) > getattr(self, "signal_pose_pair_tolerance", 0.05)):
             return {}
         pose = pose_sample.value.pose.pose
         try:
@@ -1581,7 +1667,9 @@ class ManeuverFusionNode:
                                                self.route_green_visibility_loss(
                                                    self.selection, objects, event, now, ros_now))
                         signal_ok = bool(objects is not None and (self.selection.valid or release_latched)
-                                         and not self.signal_observations
+                                         and (not self.signal_observations or
+                                              (self.core._green_confirmed(now, ros_now) and
+                                               now-self.signal_observations[0].received < 0.1))
                                          and -0.05 <= ros_now - self.selection_stamp <= self.signal_timeout)
                         permitted = bool(signal_ok and (release_latched or signal_permits(
                             self.selection.state, direction, self.right_on_green)))
@@ -1639,7 +1727,9 @@ class ManeuverFusionNode:
                     self.core.stop_requested = True
 
             signal_frame_pending = bool(self.route_signal_contexts and event and not committed
-                                        and self.signal_observations)
+                                        and self.signal_observations
+                                        and not (self.core._green_confirmed(now, ros_now)
+                                                 and now-self.signal_observations[0].received < 0.1))
             # Once the front axle has entered this mapped intersection,
             # its light and stop line no longer govern this crossing. Route,
             # obstacle and upstream-command safety checks still apply below.
@@ -1792,7 +1882,22 @@ class ManeuverFusionNode:
                                     min(decision.accel_limit, fallback.value["accel"]),
                                     max(decision.brake, fallback.value["brake"]),
                                     decision.target_speed_kph, decision.distance_m)
+            self.dynamic_zone_status=self.dynamic_constraint(odom,now,ros_now)
+            if self.dynamic_zone_status is not None and self.dynamic_zone_status["stop"]:
+                decision=Decision("SAFE_STOP",decision.reason+"|"+self.dynamic_zone_status["reason"],
+                                  0.,1.,0.,decision.distance_m)
+            if (self.dynamic_zone_status is not None and not self.dynamic_zone_status["stop"]
+                    and self.dynamic_zone_status["cap_mps"] is not None):
+                cap_kph=self.dynamic_zone_status["cap_mps"]*3.6
+                target=(cap_kph if decision.target_speed_kph is None
+                        else min(decision.target_speed_kph,cap_kph))
+                decision=Decision(decision.mode,decision.reason,decision.accel_limit,decision.brake,
+                                  target,decision.distance_m)
             output = overlay(nominal, decision)
+            if self.dynamic_zone_status is not None:
+                measured=(self.vehicle_speed_mps if self.vehicle_speed_mps is not None
+                          else self.odometry_speed_mps)
+                output=constrain_pedals(output,self.dynamic_zone_status,measured or 0.)
             requested_accel = output.accel
             output.accel = self.accel_limiter.limit(output.accel, output.brake, now, ros_now)
             self.output_pub.publish(output)
@@ -1826,6 +1931,8 @@ class ManeuverFusionNode:
                 signal_selection_reason = "legacy_unassociated"
             self.state_pub.publish(String(data=json.dumps({
                 "mode": decision.mode, "reason": decision.reason, "event": event,
+                "dynamic_zone_guard": self.dynamic_zone_status,
+                "effective_speed_target_kph": decision.target_speed_kph,
                 "direction": direction, "signal": permission_state,
                 "global_camera_signal": signal.value.state if signal else "STALE",
                 "route_direction": direction, "signal_allowed_directions": allowed_directions,

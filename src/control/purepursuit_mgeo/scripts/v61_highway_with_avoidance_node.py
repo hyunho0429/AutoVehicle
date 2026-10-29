@@ -7,7 +7,7 @@ import rospy
 from std_msgs.msg import Bool
 
 source = os.path.join(rospkg.RosPack().get_path("purepursuit_mgeo"),
-                      "scripts", "uploaded_highway_lane_strategy_node.py")
+                      "scripts", "highway_lane_strategy_node.py")
 spec = importlib.util.spec_from_file_location("v61_uploaded_highway", source)
 module = importlib.util.module_from_spec(spec)
 import sys

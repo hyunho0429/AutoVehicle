@@ -169,12 +169,12 @@ def _contains(box, pixel):
 
 
 def associate(objects, projected_targets, projected_others=None, allow_target_group=False,
-              allow_correlated_pair=False):
+              allow_correlated_pair=False, gate_px=25.0):
     """Select exactly one geometrically unique route-head/detection pair.
 
     Objects expose ObjectInfo attributes x_center/y_center/width/height in
-    pixels, conf in [0,1], and class_name. Boxes expand by a fixed, capped
-    25 pixels per side; there is no distance-to-screen-center or confidence
+    pixels, conf in [0,1], and class_name. Boxes expand by gate_px (25 by
+    default, at most 50) per side; there is no distance-to-screen-center or confidence
     ranking. Scores below 0.5 are ignored, but malformed measurements fail
     closed (including NaN, confidence >1, and nonpositive box dimensions).
 
@@ -198,6 +198,8 @@ def associate(objects, projected_targets, projected_others=None, allow_target_gr
     projected head. Both indications must agree; their stronger confidence is
     reported. A single ambiguous detection or conflicting pair still fails.
     """
+    if not isinstance(gate_px, (int, float)) or not math.isfinite(gate_px) or not 0 <= gate_px <= 50:
+        return _unknown("invalid_projection_gate")
     try:
         targets = _projections(projected_targets)
         others = _projections({} if projected_others is None else projected_others)
@@ -225,8 +227,8 @@ def associate(objects, projected_targets, projected_others=None, allow_target_gr
                     return _unknown("invalid_object")
                 if confidence < _MIN_CONFIDENCE:
                     continue
-                box = (x - width/2 - _GATE_PX, y - height/2 - _GATE_PX,
-                       x + width/2 + _GATE_PX, y + height/2 + _GATE_PX)
+                box = (x - width/2 - gate_px, y - height/2 - gate_px,
+                       x + width/2 + gate_px, y + height/2 + gate_px)
                 if not all(math.isfinite(edge) for edge in box):
                     return _unknown("invalid_object")
                 matches = [identifier for identifier, pixel in targets.items()
@@ -326,8 +328,8 @@ def associate(objects, projected_targets, projected_others=None, allow_target_gr
                 ("x_center", "y_center", "width", "height", "conf"))
             if x < 0 or y < 0 or width <= 0 or height <= 0 or not 0 <= confidence <= 1:
                 return _unknown("invalid_object")
-            box = (x - width / 2.0 - _GATE_PX, y - height / 2.0 - _GATE_PX,
-                   x + width / 2.0 + _GATE_PX, y + height / 2.0 + _GATE_PX)
+            box = (x - width / 2.0 - gate_px, y - height / 2.0 - gate_px,
+                   x + width / 2.0 + gate_px, y + height / 2.0 + gate_px)
             if not all(math.isfinite(edge) for edge in box):
                 return _unknown("invalid_object")
             name = obj.class_name

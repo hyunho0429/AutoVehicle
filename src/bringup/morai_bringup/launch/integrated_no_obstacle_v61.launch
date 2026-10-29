@@ -41,9 +41,9 @@
   <arg name="wheelbase_m" default="3.0" />
   <arg name="max_steering_rad" default="0.6981317008" />
   <arg name="steering_sign" default="1.0" />
-  <arg name="enable_lane_centering" default="false" />
-  <arg name="lane_centering_weight" default="0.25" />
-  <arg name="lane_centering_max_correction_rad" default="0.045" />
+  <arg name="enable_lane_centering" default="true" />
+  <arg name="lane_centering_weight" default="0.35" />
+  <arg name="lane_centering_max_correction_rad" default="0.08" />
   <arg name="lane_centering_min_confidence" default="0.65" />
   <arg name="lane_centering_timeout_sec" default="0.4" />
   <arg name="lane_centering_min_frames" default="4" />
@@ -62,7 +62,7 @@
   <arg name="lane_info_checkpoint" default="$(find camera_perception)/models/highway_best.pt" />
   <arg name="lane_info_cam_set" default="$(find camera_perception)/lane/cam_set.json" />
   <arg name="stopline_front_reference_offset_m" default="3.845" />
-  <arg name="stopline_hold_distance_m" default="0.5" />
+  <arg name="stopline_hold_distance_m" default="7.0" />
   <arg name="stopline_planning_decel_mps2" default="1.2" />
   <arg name="stopline_brake_ramp_distance_m" default="0.0" />
   <arg name="stopline_settle_distance_m" default="0.15" />
@@ -106,6 +106,8 @@
     <param name="vehicle_speed_timeout_sec" value="$(arg vehicle_speed_timeout_sec)" />
     <param name="speed_preview_time_sec" value="$(arg speed_preview_time_sec)" />
     <param name="lateral_accel_limit_mps2" value="$(arg curve_lateral_accel_limit_mps2)" />
+    <param name="cruise_speed_boost_kph" value="10.0" />
+    <param name="physical_lateral_accel_mps2" value="2.0" />
     <param name="max_accel_mps2" value="$(arg max_accel_mps2)" />
     <param name="max_decel_mps2" value="$(arg max_decel_mps2)" />
     <param name="conservative_curve_speed_enabled" value="true" />
@@ -145,7 +147,7 @@
     <param name="use_active_path" value="true" />
     <param name="require_active_path" value="true" />
     <param name="active_path_topic" value="/highway_lane_strategy/active_path" />
-    <param name="trajectory_topic" value="" />
+    <param name="trajectory_topic" value="/highway_lane_strategy/trajectory" />
     <param name="stop_required_topic" value="/highway_lane_strategy/stop_required" />
     <param name="require_fresh_stop_status" value="true" />
     <param name="use_target_speed_override" value="true" />
@@ -227,7 +229,7 @@
   <include file="$(find lidar_perception)/launch/lidar_tracking.launch">
     <arg name="rviz" value="false" />
   </include>
-  <node pkg="purepursuit_mgeo" type="uploaded_highway_lane_strategy_node.py" name="highway_lane_strategy" output="screen">
+  <node pkg="purepursuit_mgeo" type="highway_lane_strategy_node.py" name="highway_lane_strategy" output="screen">
     <param name="path_file" value="$(arg path_file)" />
     <param name="map_frame" value="map" />
     <param name="odom_topic" value="/localization/odometry" />

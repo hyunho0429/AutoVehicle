@@ -479,6 +479,8 @@ def build_speed_profile(
     initial_speed_mps: Optional[float] = None,
     final_speed_mps: float = 0.0,
     curvature_epsilon: float = 1e-6,
+    speed_boost_kph: float = 0.0,
+    physical_lateral_accel_mps2: Optional[float] = None,
 ) -> List[float]:
     """곡률 제한과 가·감속 제한을 반영한 한 바퀴 속도 프로파일을 만든다.
 
@@ -497,6 +499,10 @@ def build_speed_profile(
     profile: List[float] = []
     for curvature in curvatures:
         curve_speed = curvature_speed_mps(float(curvature), lateral_limit, curvature_epsilon)
+        if curve_speed is not None and speed_boost_kph > 0:
+            physical = curvature_speed_mps(float(curvature),
+                lateral_limit if physical_lateral_accel_mps2 is None else physical_lateral_accel_mps2, curvature_epsilon)
+            curve_speed = min(curve_speed + speed_boost_kph/3.6, physical)
         profile.append(max_speed if curve_speed is None else min(max_speed, curve_speed))
 
     profile[-1] = min(profile[-1], max(0.0, float(final_speed_mps)))

@@ -15,13 +15,13 @@ from purepursuit_mgeo.plan_transport import trajectory_payload
 class AdaptivePathTest(unittest.TestCase):
     def setUp(self):
         self.now=100.0
-        ros=Mock(); ros.get_param.side_effect=lambda key,default=None: default
+        ros=Mock(); ros.get_param.side_effect=lambda key,default=None: False if key=="~require_vehicle_speed" else default
         ros.Time.now.side_effect=lambda: NS(to_sec=lambda:self.now)
         ros.Time.from_sec.side_effect=lambda seconds: NS(to_sec=lambda:seconds)
         ros.get_time.side_effect=lambda:self.now
         ros.Publisher.side_effect=lambda *args,**kw: Mock()
         modules={'rospy':ros,'geometry_msgs.msg':NS(PointStamped=Message,PoseStamped=Message),
-                 'morai_msgs.msg':NS(CtrlCmd=Message),'nav_msgs.msg':NS(Odometry=Message,Path=Message),
+                 'morai_msgs.msg':NS(CtrlCmd=Message, EgoVehicleStatus=Message),'nav_msgs.msg':NS(Odometry=Message,Path=Message),
                  'std_msgs.msg':NS(Bool=Message,Float64=Message,String=Message)}
         spec=importlib.util.spec_from_file_location('adaptive_under_test',Path(__file__).resolve().parents[1]/'scripts/adaptive_curvature_purepursuit_node.py')
         self.module=importlib.util.module_from_spec(spec)

@@ -23,3 +23,6 @@ __pycache__/
 *.pem
 *.key
 
+# Offline verification artifacts
+/test-results/
+

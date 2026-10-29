@@ -1,5 +1,10 @@
 # MORAI 통합 작업공간
 
+**`morai_ws_full` 브랜치의 현재 실행 안내:** [2026-10-29 최종 병합과 설정](docs/FINAL_MERGE_20261029_KO.md).
+작업공간을 빌드한 뒤 `bash RUN_INTEGRATED.sh monitor` 또는 `bash RUN_INTEGRATED.sh drive`를 사용합니다.
+이 브랜치 루트가 catkin 작업공간입니다. 일반 최고속도 기본값 53.2km/h,
+앞범퍼 기준 정지선 7m 정차이며, 아래의 이전 문서·`drive 2` 절차는 새 통합 실행 경로와 다릅니다.
+
 현장 실행은 [주행 테스트 5가지 — 간단 실행 안내](docs/FIELD_TEST_CHECKLIST_20260921_KO.md)를 사용합니다.
 곡률 → 신호 정지 → 장애물 회피 → 끼어들기 → 전체 조합을 번호로 선택하고, 최고속도도 한 줄로 변경합니다.
 
